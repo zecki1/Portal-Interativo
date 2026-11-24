@@ -5,6 +5,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { importIdml } from "./idml/importIdml.js";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
@@ -28,9 +29,18 @@ export type BlockType =
   | "quiz"
   | "external-embed";
 
+/** Posição do bloco no original (pontos, relativo ao canto superior da página). */
+export interface BlockLayout {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface BaseBlock {
   id: string;
   type: BlockType;
+  layout?: BlockLayout;
 }
 
 export interface HeadingBlock extends BaseBlock {
@@ -139,6 +149,8 @@ export interface ProjectPage {
   id: string;
   pageNumber: number;
   title: string;
+  width?: number;
+  height?: number;
   blocks: Block[];
 }
 
@@ -571,300 +583,13 @@ async function extractFromPdfFallback(
 // ============================================================================
 // EXTRATOR NATIVO DE IDML
 // ============================================================================
+// A implementação vive em ./idml/importIdml.ts: respeita a geometria real das
+// páginas do InDesign, a ordem de leitura e rasteriza links vetoriais (.ai).
 async function extractFromIdml(
   filePath: string,
   assetsDir: string
 ): Promise<{ pages: ProjectPage[]; assets: ProjectAsset[] }> {
-  const zip = new AdmZip(filePath);
-  const entries = zip.getEntries();
-  const assets: ProjectAsset[] = [];
-  let imgIndex = 1;
-
-  // 1. Extração de mídias embutidas no pacote IDML
-  for (const e of entries) {
-    if (e.isDirectory) continue;
-    const name = e.entryName.toLowerCase();
-    if (/\.(png|jpg|jpeg|gif|svg)$/.test(name)) {
-      const fileName = `img_${imgIndex}_${path.basename(e.entryName)}`;
-      const target = path.join(assetsDir, fileName);
-      await fs.writeFile(target, e.getData());
-      assets.push({
-        id: randomUUID(),
-        fileName,
-        path: `assets/${fileName}`,
-        mimeType: name.endsWith(".png") ? "image/png" : "image/jpeg",
-        altText: path.basename(e.entryName),
-      });
-      imgIndex++;
-    }
-  }
-
-  // 2. Extrai e mapeia todas as Stories por ID e por ParagraphStyleRange
-  const storyMap = new Map<string, Array<{ text: string; isHeading: boolean }>>();
-  const allParagraphs: Array<{ text: string; isHeading: boolean }> = [];
-  const storyEntries = entries.filter((e) => /stories\/story_/i.test(e.entryName) && e.entryName.endsWith(".xml"));
-
-  for (const entry of storyEntries) {
-    const storyIdMatch = entry.entryName.match(/Story_([^\.]+)\.xml/i);
-    const storyId = storyIdMatch ? storyIdMatch[1] : entry.entryName;
-    const xml = entry.getData().toString("utf8");
-
-    const storyParagraphs: Array<{ text: string; isHeading: boolean }> = [];
-    const pRanges = xml.match(/<ParagraphStyleRange[\s\S]*?<\/ParagraphStyleRange>/g) || [];
-
-    if (pRanges.length > 0) {
-      for (const pr of pRanges) {
-        // Detecta se o estilo aplicado sugere título
-        const isHeadingStyle =
-          /AppliedParagraphStyle="[^"]*(titulo|heading|subtitulo|h1|h2|h3|repertorio|destaque|caderno)/i.test(pr);
-
-        const contents = pr.match(/<Content[^>]*>([\s\S]*?)<\/Content>/g) || [];
-        const textParts = contents.map((c) =>
-          c
-            .replace(/<[^>]+>/g, "")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&amp;/g, "&")
-        );
-        const fullP = textParts.join("").trim();
-        if (fullP) {
-          const isHeading =
-            isHeadingStyle ||
-            (fullP.length < 65 &&
-              (fullP === fullP.toUpperCase() ||
-                fullP.endsWith(":") ||
-                /^(cap[ií]tulo|unidade|caderno|habilidades|atividade|para ampliar|meu repertório)/i.test(fullP)));
-
-          storyParagraphs.push({ text: fullP, isHeading });
-          allParagraphs.push({ text: fullP, isHeading });
-        }
-      }
-    } else {
-      // Fallback para qualquer tag Content
-      const contents = xml.match(/<Content[^>]*>([\s\S]*?)<\/Content>/g) || [];
-      for (const c of contents) {
-        const text = c
-          .replace(/<[^>]+>/g, "")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&amp;/g, "&")
-          .trim();
-        if (text) {
-          const isHeading =
-            text.length < 60 &&
-            (text === text.toUpperCase() ||
-              text.endsWith(":") ||
-              /^(cap[ií]tulo|unidade|caderno|habilidades|atividade)/i.test(text));
-          storyParagraphs.push({ text, isHeading });
-          allParagraphs.push({ text, isHeading });
-        }
-      }
-    }
-
-    if (storyParagraphs.length > 0) {
-      storyMap.set(storyId, storyParagraphs);
-    }
-  }
-
-  // 3. Busca links externos de imagens nas Spreads
-  const fileDir = path.dirname(filePath);
-  const possibleSearchDirs = [
-    fileDir,
-    path.join(fileDir, "Links"),
-    path.join(fileDir, "exemplos"),
-    path.join(process.cwd(), "exemplos"),
-    path.join(process.cwd(), "exemplos", "Links"),
-    path.join(process.cwd(), "data", "projects"),
-  ];
-
-  async function resolveImageFile(cleanName: string): Promise<string | null> {
-    for (const sDir of possibleSearchDirs) {
-      const candidate = path.join(sDir, cleanName);
-      try {
-        const data = await fs.readFile(candidate);
-        const targetName = `img_${imgIndex}_${cleanName.replace(/[^a-zA-Z0-9_\.]/g, "_")}`;
-        await fs.writeFile(path.join(assetsDir, targetName), data);
-        imgIndex++;
-        return `assets/${targetName}`;
-      } catch { }
-    }
-    return null;
-  }
-
-  // 4. Mapear Spreads do InDesign
-  const spreadEntries = entries.filter((e) => /Spreads\/Spread_/i.test(e.entryName));
-  const pages: ProjectPage[] = [];
-  const usedStoryIds = new Set<string>();
-
-  for (let sIdx = 0; sIdx < spreadEntries.length; sIdx++) {
-    const sEntry = spreadEntries[sIdx];
-    const xml = sEntry.getData().toString("utf8");
-    const pageNumber = sIdx + 1;
-    const blocks: Block[] = [];
-
-    // Pegar ParentStories nesta Spread
-    const storyRefs = Array.from(xml.matchAll(/ParentStory="([^"]+)"/g)).map((m) => m[1]);
-    const uniqueStories = Array.from(new Set(storyRefs));
-
-    // Pegar Imagens/Links nesta Spread
-    const linkRefs = Array.from(xml.matchAll(/LinkResourceURI="([^"]+)"/g)).map((m) => m[1]);
-
-    // Tratar imagens da Spread
-    for (const rawUri of linkRefs) {
-      let cleanName = "";
-      try {
-        cleanName = path.basename(decodeURIComponent(rawUri));
-      } catch {
-        cleanName = path.basename(rawUri);
-      }
-
-      if (cleanName) {
-        const resolvedPath = await resolveImageFile(cleanName);
-        if (resolvedPath) {
-          const assetObj: ProjectAsset = {
-            id: randomUUID(),
-            fileName: cleanName,
-            path: resolvedPath,
-            mimeType: cleanName.endsWith(".png") ? "image/png" : "image/jpeg",
-            altText: cleanName,
-          };
-          assets.push(assetObj);
-          blocks.push({
-            id: randomUUID(),
-            type: "image",
-            data: {
-              src: resolvedPath,
-              alt: cleanName,
-              caption: cleanName,
-              enableZoom: true,
-            },
-          });
-        } else {
-          // Registra referência nominal
-          const assetObj: ProjectAsset = {
-            id: randomUUID(),
-            fileName: cleanName,
-            path: `assets/${cleanName}`,
-            mimeType: "image/placeholder",
-            altText: cleanName,
-          };
-          if (!assets.some((a) => a.fileName === cleanName)) {
-            assets.push(assetObj);
-          }
-          blocks.push({
-            id: randomUUID(),
-            type: "image",
-            data: {
-              src: `assets/${cleanName}`,
-              alt: cleanName,
-              caption: `Recurso do InDesign: ${cleanName}`,
-              enableZoom: false,
-            },
-          });
-        }
-      }
-    }
-
-    // Tratar textos das Stories desta Spread
-    for (const sid of uniqueStories) {
-      usedStoryIds.add(sid);
-      const paragraphs = storyMap.get(sid);
-      if (paragraphs) {
-        for (const p of paragraphs) {
-          if (p.isHeading) {
-            blocks.push({
-              id: randomUUID(),
-              type: "heading",
-              data: { level: p.text.length < 35 ? 2 : 3, text: p.text },
-            });
-          } else {
-            blocks.push({
-              id: randomUUID(),
-              type: "paragraph",
-              data: { html: escapeHtml(p.text) },
-            });
-          }
-        }
-      }
-    }
-
-    if (blocks.length > 0) {
-      pages.push({
-        id: randomUUID(),
-        pageNumber,
-        title: `Página ${pageNumber}`,
-        blocks,
-      });
-    }
-  }
-
-  // 5. Stories que não estavam vinculadas explicitamente às Spreads
-  const unusedStories: Array<{ text: string; isHeading: boolean }> = [];
-  for (const [sid, pList] of storyMap.entries()) {
-    if (!usedStoryIds.has(sid)) {
-      unusedStories.push(...pList);
-    }
-  }
-
-  // Se o documento não gerou páginas pelos Spreads (como C2 e C4 onde o Spread não tinha ParentStory), ou sobrou conteúdo
-  if (pages.length === 0 || unusedStories.length > 0) {
-    const fallbackList = pages.length === 0 ? allParagraphs : unusedStories;
-    const chunkSize = 8;
-    const numPages = Math.max(1, Math.ceil(fallbackList.length / chunkSize));
-
-    for (let i = 0; i < numPages; i++) {
-      const pageNumber = pages.length + 1;
-      const chunk = fallbackList.slice(i * chunkSize, (i + 1) * chunkSize);
-      const blocks: Block[] = [];
-
-      for (const p of chunk) {
-        if (p.isHeading) {
-          blocks.push({
-            id: randomUUID(),
-            type: "heading",
-            data: { level: p.text.length < 35 ? 2 : 3, text: p.text },
-          });
-        } else {
-          blocks.push({
-            id: randomUUID(),
-            type: "paragraph",
-            data: { html: escapeHtml(p.text) },
-          });
-        }
-      }
-
-      if (blocks.length > 0) {
-        pages.push({
-          id: randomUUID(),
-          pageNumber,
-          title: `Página ${pageNumber}`,
-          blocks,
-        });
-      }
-    }
-  }
-
-  return { pages, assets };
-}
-
-function collectXmlContent(obj: any, out: string[]) {
-  if (!obj || typeof obj !== "object") return;
-  if (Array.isArray(obj)) {
-    for (const item of obj) collectXmlContent(item, out);
-    return;
-  }
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (key === "Content" || key.endsWith(":Content")) {
-      if (typeof val === "string") out.push(val);
-      else if (val && typeof val === "object" && val["#text"]) out.push(String(val["#text"]));
-      else if (Array.isArray(val)) {
-        for (const v of val) collectXmlContent({ Content: v }, out);
-      }
-    } else {
-      collectXmlContent(val, out);
-    }
-  }
+  return importIdml(filePath, assetsDir);
 }
 
 function escapeHtml(s: string) {

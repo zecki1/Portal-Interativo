@@ -1,0 +1,15 @@
+import { XMLParser } from "fast-xml-parser";
+import AdmZip from "adm-zip";
+const zip = new AdmZip("C:/Users/SS1111235/Downloads/Livro-interativo/ET_EF1/Livro EF1 - Pacote/ET_EF1_ME/ET_EF1_ME_ID1-17.idml");
+const xml = zip.getEntry("Spreads/Spread_u5a88.xml").getData().toString("utf8");
+const p = new XMLParser({ ignoreAttributes:false, attributeNamePrefix:"", preserveOrder:true, trimValues:false, parseTagValue:false, parseAttributeValue:false, allowBooleanAttributes:true });
+const doc = p.parse(xml);
+const root = doc.find(n=>n["idPkg:Spread"]);
+const spread = root["idPkg:Spread"].find(n=>n.Spread);
+console.log("spread keys", Object.keys(spread).slice(0,5));
+const kids = spread.Spread.filter(n=>typeof n==="object");
+console.log("children tags", kids.slice(0,14).map(n=>Object.keys(n).find(k=>k!==":@")));
+const tf = kids.find(n=>n.TextFrame);
+console.log("tf attrs sample", Object.keys(tf[":@"]||{}).slice(0,12));
+const show = (n, d=0) => { const t=Object.keys(n).find(k=>k!==":@"); if(d>4) return; console.log("  ".repeat(d)+t, n[":@"]?.ItemTransform||""); if(Array.isArray(n[t])) n[t].forEach(c=>{ if(typeof c==="object" && !c["#text"]) show(c,d+1); }); };
+show(tf);
