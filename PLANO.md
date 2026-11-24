@@ -1,6 +1,8 @@
 # PLANO — Interativo (Conversor de Livros em Blocos Web)
 
 > Documento executivo de acompanhamento. Para a especificação completa com diagramas e ADRs, consulte [docs/PLANEJAMENTO_ARQUITETURA.md](file:///c:/Users/SS1111235/Documents/SESI/Interativo/docs/PLANEJAMENTO_ARQUITETURA.md).
+>
+> **Backlog de correções por demanda:** [docs/BACKLOG.md](file:///c:/Users/SS1111235/Documents/SESI/Interativo/docs/BACKLOG.md) — ordem: T2 paginação PDF → T3 layout → T4 IDML/imagens → T1 lote/progresso → T5 páginas → T6 blocos → T7 build.
 
 ## Objetivo
 Converter livros e materiais didáticos (PDF / IDML / InDesign) em projetos web interativos, renderizando páginas em **blocos editáveis** (textos, imagens, sanfonas, abas, quizzes e vídeos) com editor drag & drop e exportação em pacote web (.zip) autônomo.
@@ -17,10 +19,12 @@ Converter livros e materiais didáticos (PDF / IDML / InDesign) em projetos web 
 
 ### Fase 2 — Backend & Pipeline de Extração de Blocos
 - [x] Estrutura base Fastify + TypeScript + Prisma + JWT/SSO.
+- [x] **T2 — Paginação real de PDF (concluída):** extração primária via `pdftotext -layout` com divisão por `\f` (1 página do PDF = 1 página do projeto), fallback para parser nativo; imagens JPEG via `/DCTDecode`. Validado com PDF de 6 páginas (`ET_EF1_ME_ID1-17.pdf` → `pageCount: 6`).
 - [ ] Pipeline aprimorado de extração:
   - [ ] Extração de imagens de PDF (via `pdfimages` / `pdf-lib` / `pdfjs-dist`).
-  - [ ] Extração de imagens e estilos de parágrafos de IDML (XML stories).
-  - [ ] Decomposição automática do conteúdo em páginas e blocos no `project.json`.
+  - [ ] Extração de imagens e estilos de parágrafos de IDML (XML stories + `Resources/` + `Links/`).
+  - [x] Decomposição automática do conteúdo em páginas e blocos no `project.json` (PDF).
+  - [ ] Decomposição IDML por spreads reais (T4/T5).
 - [ ] Endpoints da API de edição de blocos:
   - [ ] `GET /api/v1/projects/:id/document` — obtém a árvore de páginas e blocos.
   - [ ] `PUT /api/v1/projects/:id/document` — salva o estado completo editado.

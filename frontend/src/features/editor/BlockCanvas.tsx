@@ -73,7 +73,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
   return (
     <div className="flex-1 overflow-y-auto bg-surface-2 p-6 flex flex-col items-center transition-colors duration-200">
       {/* Folha / Página do Livro */}
-      <div className="w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-8 sm:p-12 mb-12 min-h-[700px] flex flex-col transition-colors duration-200">
+      <div className="w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-8 sm:p-12 mb-12  flex flex-col transition-colors duration-200">
         {/* Cabeçalho da Página */}
         <div className="flex items-center justify-between pb-4 border-b border-border mb-8">
           <div className="flex items-center gap-3">

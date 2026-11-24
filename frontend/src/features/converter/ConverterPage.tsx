@@ -150,11 +150,10 @@ export default function ConverterPage() {
             const file = e.dataTransfer.files?.[0];
             if (file) handleFileUpload(file);
           }}
-          className={`relative rounded-3xl border-2 border-dashed p-10 text-center transition-all duration-200 flex flex-col items-center justify-center ${
-            isDragOver
+          className={`relative rounded-3xl border-2 border-dashed p-10 text-center transition-all duration-200 flex flex-col items-center justify-center ${isDragOver
               ? "border-brand-red bg-brand-red/10 scale-[1.01]"
               : "border-border bg-surface hover:border-brand-red/50 hover:bg-surface-3/50"
-          } ${uploading ? "opacity-75 pointer-events-none" : "cursor-pointer"}`}
+            } ${uploading ? "opacity-75 pointer-events-none" : "cursor-pointer"}`}
           onClick={() => !uploading && fileInputRef.current?.click()}
         >
           <input
@@ -248,11 +247,10 @@ export default function ConverterPage() {
                     <div className="p-5">
                       <div className="flex items-center justify-between mb-3">
                         <span
-                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider ${
-                            p.sourceFormat === "PDF"
+                          className={`text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider ${p.sourceFormat === "PDF"
                               ? "bg-brand-red/10 text-brand-red border border-brand-red/30"
                               : "bg-purple-500/10 text-purple-400 border border-purple-500/30"
-                          }`}
+                            }`}
                         >
                           {p.sourceFormat}
                         </span>

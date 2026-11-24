@@ -3,6 +3,7 @@ import { XMLParser } from "fast-xml-parser";
 import fs from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -245,6 +246,113 @@ export async function convertFile(filePath: string, originalName: string): Promi
 // ============================================================================
 // EXTRATOR NATIVO DE PDF
 // ============================================================================
+async function extractPdfImages(filePath: string, assetsDir: string): Promise<ProjectAsset[]> {
+  const buf = await fs.readFile(filePath);
+  const content = buf.toString("latin1");
+  const assets: ProjectAsset[] = [];
+  let imgIndex = 1;
+  const imgRegex = /\/Type\s*\/XObject[\s\S]*?\/Subtype\s*\/Image[\s\S]*?\/Filter\s*\/DCTDecode[\s\S]*?stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  while ((match = imgRegex.exec(content)) !== null) {
+    const imgBuf = Buffer.from(match[1], "latin1");
+    if (imgBuf[0] === 0xff && imgBuf[1] === 0xd8) {
+      const fileName = `img_${imgIndex}.jpg`;
+      await fs.writeFile(path.join(assetsDir, fileName), imgBuf);
+      assets.push({
+        id: randomUUID(),
+        fileName,
+        path: `assets/${fileName}`,
+        mimeType: "image/jpeg",
+        altText: `Imagem ${imgIndex} extraída do documento`,
+      });
+      imgIndex++;
+    }
+  }
+  return assets;
+}
+
+function isPdfHeading(text: string): boolean {
+  return (
+    text.length < 75 &&
+    (text === text.toUpperCase() ||
+      text.endsWith(":") ||
+      /^(cap[ií]tulo|unidade|caderno|habilidades|atividade|para ampliar|meu repert[oó]rio|introdu[cç][aã]o)/i.test(text))
+  );
+}
+
+function buildPdfPageBlocks(rawPage: string): Block[] {
+  const blocks: Block[] = [];
+  const groups: string[][] = [];
+  let current: string[] = [];
+
+  for (const line of rawPage.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (current.length > 0) {
+        groups.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push(trimmed);
+  }
+  if (current.length > 0) groups.push(current);
+
+  for (const group of groups) {
+    const text = group.join(" ").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    if (group.length === 1 && isPdfHeading(text)) {
+      blocks.push({
+        id: randomUUID(),
+        type: "heading",
+        data: { level: text.length < 35 ? 2 : 3, text },
+      });
+    } else {
+      blocks.push({
+        id: randomUUID(),
+        type: "paragraph",
+        data: { html: escapeHtml(text) },
+      });
+    }
+  }
+  return blocks;
+}
+
+async function extractFromPdf(
+  filePath: string,
+  assetsDir: string
+): Promise<{ pages: ProjectPage[]; assets: ProjectAsset[] }> {
+  // Extração primária: pdftotext preserva a divisão real de páginas (\f).
+  const result = spawnSync("pdftotext", ["-layout", "-enc", "UTF-8", filePath, "-"], {
+    maxBuffer: 512 * 1024 * 1024,
+    encoding: "buffer",
+  });
+
+  if (result.status !== 0 || !result.stdout || result.stdout.length === 0) {
+    return extractFromPdfFallback(filePath, assetsDir);
+  }
+
+  const text = result.stdout.toString("utf8");
+  const rawPages = text.split("\f");
+  // O pdftotext termina o último stream com \f; remove a página vazia final.
+  if (rawPages.length > 0 && rawPages[rawPages.length - 1].trim() === "") {
+    rawPages.pop();
+  }
+  if (rawPages.length === 0) {
+    return extractFromPdfFallback(filePath, assetsDir);
+  }
+
+  const assets = await extractPdfImages(filePath, assetsDir);
+  const pages: ProjectPage[] = rawPages.map((rawPage, index) => ({
+    id: randomUUID(),
+    pageNumber: index + 1,
+    title: `Página ${index + 1}`,
+    blocks: buildPdfPageBlocks(rawPage),
+  }));
+
+  return { pages, assets };
+}
+
 function decodePdfOctal(str: string): string {
   return str
     .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
@@ -255,7 +363,7 @@ function decodePdfOctal(str: string): string {
     .trim();
 }
 
-async function extractFromPdf(
+async function extractFromPdfFallback(
   filePath: string,
   assetsDir: string
 ): Promise<{ pages: ProjectPage[]; assets: ProjectAsset[] }> {
@@ -578,7 +686,7 @@ async function extractFromIdml(
         await fs.writeFile(path.join(assetsDir, targetName), data);
         imgIndex++;
         return `assets/${targetName}`;
-      } catch {}
+      } catch { }
     }
     return null;
   }

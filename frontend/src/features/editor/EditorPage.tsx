@@ -354,11 +354,10 @@ export default function EditorPage() {
           {/* Botão de Toggle do Inspector */}
           <button
             onClick={() => setInspectorOpen(!inspectorOpen)}
-            className={`p-1.5 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition ${
-              inspectorOpen
+            className={`p-1.5 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition ${inspectorOpen
                 ? "bg-surface-3 border-border text-ink"
                 : "bg-surface border-border text-muted hover:bg-surface-3"
-            }`}
+              }`}
             title="Abrir/Fechar Propriedades do Bloco"
           >
             <IconSliders className="w-3.5 h-3.5" />
