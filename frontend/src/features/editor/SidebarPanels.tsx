@@ -15,6 +15,26 @@ import {
   IconChevronRight,
   IconSparkles,
 } from "../../components/icons";
+import {
+  LuBookOpen,
+  LuRefreshCw,
+  LuHistory,
+  LuTable,
+  LuImages,
+  LuPuzzle,
+  LuMountain,
+  LuHighlighter,
+  LuCode,
+  LuCheckCheck,
+  LuBadgeCheck,
+  LuPencil,
+  LuArrowUpDown,
+  LuLink2,
+  LuGamepad2,
+  LuCaseSensitive,
+  LuLayoutGrid,
+  LuArrowDownToLine,
+} from "react-icons/lu";
 
 interface SidebarPanelsProps {
   doc: ProjectDocument;
@@ -25,6 +45,8 @@ interface SidebarPanelsProps {
   onAddPage: () => void;
   onDuplicatePage: (index: number) => void;
   onDeletePage: (index: number) => void;
+  /** Junta a página `index` com a próxima (concatena os blocos). */
+  onMergePageWithNext: (index: number) => void;
   onAddBlock: (type: BlockType, assetSrc?: string) => void;
   onUploadAsset: (file: File) => void;
   selectedBlockId: string | null;
@@ -41,6 +63,7 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
   onAddPage,
   onDuplicatePage,
   onDeletePage,
+  onMergePageWithNext,
   onAddBlock,
   onUploadAsset,
   selectedBlockId,
@@ -128,6 +151,142 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
       badge: "Interativo",
       color: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
       icon: <IconLink className="w-5 h-5 text-cyan-500" />,
+    },
+    {
+      type: "cover",
+      title: "Capa / Hero",
+      description: "Abertura de unidade com imagem e botão",
+      badge: "ProjetoX",
+      color: "bg-rose-500/10 text-rose-500 border-rose-500/20",
+      icon: <LuBookOpen className="w-5 h-5 text-rose-500" aria-hidden="true" />,
+    },
+    {
+      type: "flipcard",
+      title: "Cartão que Vira (Flipcard)",
+      description: "Frente e verso com revelação ao clicar",
+      badge: "ProjetoX",
+      color: "bg-violet-500/10 text-violet-500 border-violet-500/20",
+      icon: <LuRefreshCw className="w-5 h-5 text-violet-500" aria-hidden="true" />,
+    },
+    {
+      type: "timeline",
+      title: "Linha do Tempo",
+      description: "Etapas verticais com ícones",
+      badge: "ProjetoX",
+      color: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+      icon: <LuHistory className="w-5 h-5 text-amber-600" aria-hidden="true" />,
+    },
+    {
+      type: "table",
+      title: "Tabela Responsiva",
+      description: "Vira cartões no celular",
+      badge: "ProjetoX",
+      color: "bg-slate-500/10 text-slate-500 border-slate-500/20",
+      icon: <LuTable className="w-5 h-5 text-slate-500" aria-hidden="true" />,
+    },
+    {
+      type: "gallery",
+      title: "Galeria / Carrossel",
+      description: "Várias imagens com navegação",
+      badge: "ProjetoX",
+      color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+      icon: <LuImages className="w-5 h-5 text-emerald-600" aria-hidden="true" />,
+    },
+    {
+      type: "image-text-card",
+      title: "Imagem + Texto",
+      description: "Card lado a lado com imagem",
+      badge: "ProjetoX",
+      color: "bg-teal-500/10 text-teal-600 border-teal-500/20",
+      icon: <LuPuzzle className="w-5 h-5 text-teal-600" aria-hidden="true" />,
+    },
+    {
+      type: "parallax",
+      title: "Faixa Parallax",
+      description: "Separador com imagem de fundo fixa",
+      badge: "ProjetoX",
+      color: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+      icon: <LuMountain className="w-5 h-5 text-indigo-500" aria-hidden="true" />,
+    },
+    {
+      type: "highlight",
+      title: "Texto Destacado",
+      description: "Marcações em amarelo no texto",
+      badge: "ProjetoX",
+      color: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+      icon: <LuHighlighter className="w-5 h-5 text-yellow-600" aria-hidden="true" />,
+    },
+    {
+      type: "code",
+      title: "Bloco de Código",
+      description: "Código com nome do arquivo e linguagem",
+      badge: "ProjetoX",
+      color: "bg-zinc-500/10 text-zinc-500 border-zinc-500/20",
+      icon: <LuCode className="w-5 h-5 text-zinc-500" aria-hidden="true" />,
+    },
+    {
+      type: "multiple-choice",
+      title: "Múltipla Escolha",
+      description: "Uma ou várias corretas, com tentativas",
+      badge: "Jogo",
+      color: "bg-rose-500/10 text-rose-500 border-rose-500/20",
+      icon: <LuCheckCheck className="w-5 h-5 text-rose-500" aria-hidden="true" />,
+    },
+    {
+      type: "true-false",
+      title: "Verdadeiro ou Falso",
+      description: "Afirmações com V/F e correção",
+      badge: "Jogo",
+      color: "bg-lime-500/10 text-lime-600 border-lime-500/20",
+      icon: <LuBadgeCheck className="w-5 h-5 text-lime-600" aria-hidden="true" />,
+    },
+    {
+      type: "fill-blanks",
+      title: "Completar Lacunas",
+      description: "Banco de palavras e lacunas",
+      badge: "Jogo",
+      color: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+      icon: <LuPencil className="w-5 h-5 text-sky-600" aria-hidden="true" />,
+    },
+    {
+      type: "ordering",
+      title: "Ordenar Itens",
+      description: "Arraste para colocar na ordem",
+      badge: "Jogo",
+      color: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      icon: <LuArrowUpDown className="w-5 h-5 text-orange-600" aria-hidden="true" />,
+    },
+    {
+      type: "matching",
+      title: "Relacionar Colunas",
+      description: "Associe cada item à sua dupla",
+      badge: "Jogo",
+      color: "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20",
+      icon: <LuLink2 className="w-5 h-5 text-fuchsia-600" aria-hidden="true" />,
+    },
+    {
+      type: "memory-game",
+      title: "Jogo da Memória",
+      description: "Encontre os pares de cartas",
+      badge: "Jogo",
+      color: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+      icon: <LuGamepad2 className="w-5 h-5 text-purple-600" aria-hidden="true" />,
+    },
+    {
+      type: "word-search",
+      title: "Caça-Palavras",
+      description: "Grade gerada com as palavras",
+      badge: "Jogo",
+      color: "bg-green-500/10 text-green-600 border-green-500/20",
+      icon: <LuCaseSensitive className="w-5 h-5 text-green-600" aria-hidden="true" />,
+    },
+    {
+      type: "crossword",
+      title: "Palavras Cruzadas",
+      description: "Grade e dicas geradas automaticamente",
+      badge: "Jogo",
+      color: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
+      icon: <LuLayoutGrid className="w-5 h-5 text-cyan-600" aria-hidden="true" />,
     },
   ];
 
@@ -226,8 +385,22 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      {idx < doc.pages.length - 1 && (
+                        <button
+                          title="Juntar com a próxima página"
+                          aria-label="Juntar com a próxima página"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMergePageWithNext(idx);
+                          }}
+                          className="p-1 text-muted hover:text-brand-red rounded hover:bg-brand-red/10"
+                        >
+                          <LuArrowDownToLine className="w-3.5 h-3.5" aria-hidden="true" />
+                        </button>
+                      )}
                       <button
                         title="Duplicar Página"
+                        aria-label="Duplicar página"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDuplicatePage(idx);
@@ -239,6 +412,7 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
                       {doc.pages.length > 1 && (
                         <button
                           title="Excluir Página"
+                          aria-label="Excluir página"
                           onClick={(e) => {
                             e.stopPropagation();
                             onDeletePage(idx);
