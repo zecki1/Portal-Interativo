@@ -101,9 +101,13 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
       contentHtml: "<p>Como as escolhas individuais afetam a preservação dos biomas?</p>",
     },
     { variant: "box" as const, contentHtml: "<p>Caixa livre, sem ícone, para textos de apoio.</p>" },
+    { variant: "info" as const, contentHtml: "<p><strong>Informação:</strong> variante clássica para contextualizar um conceito.</p>" },
+    { variant: "tip" as const, contentHtml: "<p><strong>Dica:</strong> oriente a leitura em grupo antes dos exercícios.</p>" },
+    { variant: "warning" as const, contentHtml: "<p><strong>Atenção:</strong> revise as imagens vinculadas antes de exportar o pacote.</p>" },
+    { variant: "curiosity" as const, contentHtml: "<p><strong>Curiosidade:</strong> o formato exportado funciona totalmente offline.</p>" },
   ];
 
-  const capa = page(2, "Capa e apresentação", [
+  const capa = page(1, "Capa e apresentação", [
     block({
       type: "cover",
       data: {
@@ -115,10 +119,18 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
         align: "left",
       },
     }),
+    block({ type: "heading", data: { level: 1, text: "Guia completo de blocos (H1)" } }),
     block({
       type: "paragraph",
       data: {
         html: "Este documento de exemplo percorre os <strong>blocos de conteúdo</strong>, as <strong>boxes do ProjetoX</strong> e os <strong>exercícios interativos</strong>. Cada página funciona como vitrine: clique no bloco no editor para ver como ele é configurado.",
+      },
+    }),
+    block({ type: "heading", data: { level: 3, text: "O que você encontra aqui (H3)" } }),
+    block({
+      type: "paragraph",
+      data: {
+        html: "<ul><li><strong>Texto e estrutura:</strong> títulos H1/H2/H3, parágrafos, listas e destaques.</li><li><strong>Mídia e interação:</strong> imagens com zoom, link externo e zonas de clique, galeria, vídeo e embed.</li><li><strong>ProjetoX e jogos:</strong> flipcard, linha do tempo, tabela, código e 8 tipos de exercício.</li></ul>",
       },
     }),
     block({
@@ -191,8 +203,8 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
     }),
   ]);
 
-  const conteudo = page(3, "Conteúdo e mídia", [
-    block({ type: "heading", data: { level: 2, text: "Recursos de leitura" } }),
+  const conteudo = page(2, "Conteúdo e mídia", [
+    block({ type: "heading", data: { level: 2, text: "Recursos de leitura (H2)" } }),
     block({
       type: "paragraph",
       data: {
@@ -212,9 +224,39 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
       type: "image-text-card",
       data: {
         image: "assets/exemplo-card.svg",
-        title: "Imagem e texto lado a lado",
+        title: "Imagem e texto lado a lado (esquerda)",
         html: "<p>O card equilibra uma imagem explicativa com o texto de apoio. No celular, a imagem vai para cima do texto.</p>",
         layout: "left",
+      },
+    }),
+    block({
+      type: "image-text-card",
+      data: {
+        image: "assets/exemplo-card.svg",
+        title: "Imagem e texto lado a lado (direita)",
+        html: "<p>A variação com a imagem à direita ajuda a alternar o ritmo visual entre seções.</p>",
+        layout: "right",
+      },
+    }),
+    block({
+      type: "image",
+      data: {
+        src: "assets/exemplo-card.svg",
+        alt: "Ilustração estilizada de um tucano sobre um galho",
+        caption: "Imagem com link externo configurado.",
+        enableZoom: false,
+        linkUrl: "https://www.icmbio.gov.br/",
+      },
+    }),
+    block({
+      type: "image",
+      data: {
+        src: "",
+        alt: "Exemplo de imagem vinculada pendente",
+        caption: "Placeholder de imagem vinculada ausente (vincule na aba Mídias).",
+        missing: true,
+        fileName: "ilustracao-pendente.png",
+        enableZoom: true,
       },
     }),
     block({
@@ -254,6 +296,7 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
       type: "flipcard",
       data: {
         title: "Você sabia?",
+        image: "assets/exemplo-card.svg",
         frontHtml: "<p>Clique para descobrir uma curiosidade sobre o tucano.</p>",
         backHtml: "<p>O bico do tucano é leve e ajuda a <strong>regular a temperatura</strong> do corpo.</p>",
         hint: "Clique para virar",
