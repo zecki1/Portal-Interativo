@@ -1,5 +1,18 @@
 import React, { useState } from "react";
 import type { ProjectPage, Block, BlockType } from "../../types/project";
+import { ProjxBlockPreview, isProjxBlock } from "./ProjxBlockPreview";
+import { blockLabel } from "../../lib/blockLabels";
+import {
+  LuTriangleAlert,
+  LuSearch,
+  LuLightbulb,
+  LuCircleHelp,
+  LuFileText,
+  LuMessageCircleQuestion,
+  LuInfo,
+  LuZoomIn,
+  LuCheck,
+} from "react-icons/lu";
 import {
   IconGripVertical,
   IconArrowUp,
@@ -157,7 +170,17 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                     onDrop={(e) => handleDrop(e, idx)}
                     onDragEnd={handleDragEnd}
                     onClick={() => onSelectBlock(block.id)}
-                    className={`relative rounded-xl border transition-all cursor-pointer p-4 ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectBlock(block.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    aria-label={`${blockLabel(block.type)} — bloco ${idx + 1} de ${page.blocks.length}`}
+                    className={`relative rounded-xl border transition-all cursor-pointer p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-red/60 ${
                       isSelected
                         ? "border-brand-red ring-2 ring-brand-red/20 bg-brand-red/5 shadow-sm"
                         : "border-transparent hover:border-border hover:bg-surface-3/50"
@@ -180,6 +203,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                         onClick={() => idx > 0 && onMoveBlock(idx, idx - 1)}
                         disabled={idx === 0}
                         title="Mover para cima"
+                        aria-label="Mover bloco para cima"
                         className="p-1 text-muted hover:text-ink disabled:opacity-30 rounded"
                       >
                         <IconArrowUp className="w-3.5 h-3.5" />
@@ -188,6 +212,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                         onClick={() => idx < page.blocks.length - 1 && onMoveBlock(idx, idx + 1)}
                         disabled={idx === page.blocks.length - 1}
                         title="Mover para baixo"
+                        aria-label="Mover bloco para baixo"
                         className="p-1 text-muted hover:text-ink disabled:opacity-30 rounded"
                       >
                         <IconArrowDown className="w-3.5 h-3.5" />
@@ -196,6 +221,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                       <button
                         onClick={() => onDuplicateBlock(block.id)}
                         title="Duplicar bloco"
+                        aria-label="Duplicar bloco"
                         className="p-1 text-muted hover:text-ink rounded"
                       >
                         <IconCopy className="w-3.5 h-3.5" />
@@ -203,6 +229,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                       <button
                         onClick={() => onDeleteBlock(block.id)}
                         title="Excluir bloco"
+                        aria-label="Excluir bloco"
                         className="p-1 text-muted hover:text-brand-red rounded"
                       >
                         <IconTrash className="w-3.5 h-3.5" />
@@ -232,44 +259,74 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                         </div>
                       )}
 
-                      {/* PARÁGRAFO */}
+                      {/* PARÁGRAFO — html gerado pelo parser (negrito, itálico, <br/>, listas) */}
                       {block.type === "paragraph" && (
-                        <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">
-                          {block.data.html || "Parágrafo sem texto..."}
-                        </p>
+                        <div
+                          className="text-sm text-ink leading-relaxed [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_strong]:font-bold [&_em]:italic"
+                          dangerouslySetInnerHTML={{
+                            __html: block.data.html || "Parágrafo sem texto...",
+                          }}
+                        />
                       )}
 
                       {/* IMAGEM */}
                       {block.type === "image" && (
                         <div className="text-center my-1">
-                          <div className="inline-block relative rounded-xl overflow-hidden border border-border bg-surface-3">
-                            <img
-                              src={`${apiBase}/projects/${projectId}/preview/${block.data.src}`}
-                              alt={block.data.alt}
-                              className="max-h-80 max-w-full object-contain mx-auto rounded-lg"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = "none";
-                              }}
-                            />
-                            {/* Fallback visual quando a imagem é uma referência do InDesign */}
-                            <div className="p-4 text-center">
-                              <IconImage className="w-8 h-8 mx-auto mb-2 opacity-50 text-brand-red" />
-                              <p className="text-xs font-bold text-ink">{block.data.alt || block.data.caption || "Imagem"}</p>
-                              <p className="text-[10px] text-muted mt-0.5">Recurso do InDesign · Clique para vincular arquivo</p>
+                          {block.data.missing || !block.data.src ? (
+                            <div className="w-full inline-flex flex-col items-center gap-1 p-6 rounded-xl border-2 border-dashed border-border bg-surface-3">
+                              <IconImage className="w-8 h-8 opacity-60 text-brand-red" />
+                              <p className="text-xs font-bold text-ink break-all">
+                                {block.data.fileName || block.data.alt || "Imagem"}
+                              </p>
+                              <p className="text-[10px] text-muted">
+                                Recurso vinculado do InDesign · envie o arquivo na aba Mídia e clique em "Usar"
+                              </p>
                             </div>
-                            {block.data.enableZoom && (
-                              <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
-                                🔍 Zoom Ativo
-                              </span>
-                            )}
-                            {block.data.linkUrl && (
-                              <span className="absolute bottom-2 left-2 bg-brand-red text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
-                                <IconLink className="w-3 h-3" /> Link Ativo
-                              </span>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="inline-block relative rounded-xl overflow-hidden border border-border bg-surface-3">
+                              <img
+                                src={`${apiBase}/projects/${projectId}/preview/${block.data.src}`}
+                                alt={block.data.alt}
+                                className="max-h-80 max-w-full object-contain mx-auto rounded-lg"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = "none";
+                                }}
+                              />
+                              {!!(block.data.hotspots && block.data.hotspots.length) && (
+                                <div className="absolute inset-0">
+                                  {block.data.hotspots!.map((h, hi) => (
+                                    <span
+                                      key={h.id}
+                                      title={h.title}
+                                      className="absolute border-2 border-dashed border-brand-red bg-brand-red/20 rounded grid place-items-center text-[10px] font-black text-white"
+                                      style={{ left: `${h.x}%`, top: `${h.y}%`, width: `${h.w}%`, height: `${h.h}%` }}
+                                    >
+                                      <span className="w-5 h-5 rounded-full bg-brand-red grid place-items-center shadow">
+                                        {hi + 1}
+                                      </span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {block.data.enableZoom && (
+                                <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm inline-flex items-center gap-1">
+                                  <LuZoomIn className="w-3 h-3" aria-hidden="true" /> Zoom ativo
+                                </span>
+                              )}
+                              {block.data.linkUrl && (
+                                <span className="absolute bottom-2 left-2 bg-brand-red text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                                  <IconLink className="w-3 h-3" /> Link Ativo
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {block.data.caption && (
                             <p className="text-xs text-muted italic mt-1.5">{block.data.caption}</p>
+                          )}
+                          {!!(block.data.hotspots && block.data.hotspots.length) && (
+                            <p className="text-[10px] font-bold text-brand-red mt-1">
+                              {block.data.hotspots!.length} zona(s) de clique · abre modal na publicação
+                            </p>
                           )}
                         </div>
                       )}
@@ -289,35 +346,59 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                                   <span>{item.title}</span>
                                   <IconChevronDown className="w-4 h-4 text-muted" />
                                 </div>
-                                <div className="mt-2 text-xs text-muted pl-2 border-l-2 border-brand-red/40 leading-relaxed">
-                                  {item.contentHtml}
-                                </div>
+                                <div
+                                  className="mt-2 text-xs text-muted pl-2 border-l-2 border-brand-red/40 leading-relaxed [&_p]:my-1 [&_strong]:font-bold [&_ul]:list-disc [&_ul]:pl-4 [&_mark]:bg-yellow-200 [&_mark]:text-ink"
+                                  dangerouslySetInnerHTML={{ __html: item.contentHtml || "" }}
+                                />
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      {/* CAIXA DE DESTAQUE (CALLOUT) */}
-                      {block.type === "callout" && (
-                        <div
-                          className={`p-4 rounded-xl border-l-4 my-1 ${
-                            block.data.variant === "tip"
-                              ? "bg-emerald-500/10 border-emerald-500 text-ink"
-                              : block.data.variant === "warning"
-                              ? "bg-amber-500/10 border-amber-500 text-ink"
-                              : block.data.variant === "curiosity"
-                              ? "bg-purple-500/10 border-purple-500 text-ink"
-                              : "bg-blue-500/10 border-blue-500 text-ink"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider mb-1 text-brand-red">
-                            <IconSparkles className="w-4 h-4" />
-                            <span>{block.data.title || "Destaque"}</span>
+                      {/* ABAS (TABS) */}
+                      {block.type === "tabs" && (
+                        <div className="border border-border rounded-xl overflow-hidden bg-surface my-1">
+                          <div className="flex flex-wrap gap-1 px-2 pt-2 bg-surface-3 border-b border-border">
+                            {(block.data.items || []).map((tab, ti) => (
+                              <span
+                                key={tab.id}
+                                className={`px-3 py-1.5 text-[11px] font-bold rounded-t-lg ${
+                                  ti === 0 ? "bg-surface text-brand-red border border-border border-b-surface" : "text-muted"
+                                }`}
+                              >
+                                {tab.label}
+                              </span>
+                            ))}
                           </div>
-                          <div className="text-xs leading-relaxed opacity-95">{block.data.contentHtml}</div>
+                          <div className="p-3">
+                            <RichBlock html={block.data.items?.[0]?.contentHtml || ""} />
+                          </div>
                         </div>
                       )}
+
+                      {/* CAIXA DE DESTAQUE (BOXES PROJETOX) */}
+                      {block.type === "callout" && (() => {
+                        const preset = BOX_PRESETS[block.data.variant] || BOX_PRESETS.info;
+                        const title = block.data.title ?? preset.title;
+                        return (
+                          <div className={`p-4 rounded-xl border-l-4 my-1 flex items-start gap-3 ${preset.classes}`}>
+                            <div className="flex-1 min-w-0">
+                              {title && (
+                                <div className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wider mb-1 ${preset.titleClass}`}>
+                                  {preset.icon ?? <IconSparkles className="w-4 h-4" aria-hidden="true" />}
+                                  <span>{title}</span>
+                                </div>
+                              )}
+                              <div
+                                className="text-xs leading-relaxed opacity-95 [&_p]:my-1 [&_strong]:font-bold [&_ul]:list-disc [&_ul]:pl-4 [&_mark]:bg-yellow-200 [&_mark]:text-ink"
+                                dangerouslySetInnerHTML={{ __html: block.data.contentHtml || "" }}
+                              />
+                            </div>
+                            {preset.icon && <span className="shrink-0 [&>svg]:w-6 [&>svg]:h-6">{preset.icon}</span>}
+                          </div>
+                        );
+                      })()}
 
                       {/* QUIZ INTERATIVO */}
                       {block.type === "quiz" && (
@@ -343,7 +424,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                                       : "border-border"
                                   }`}
                                 >
-                                  {opt.isCorrect ? "✓" : ""}
+                                  {opt.isCorrect ? <LuCheck className="w-2.5 h-2.5" aria-hidden="true" /> : ""}
                                 </span>
                                 <span>{opt.text}</span>
                                 {opt.isCorrect && (
@@ -370,6 +451,20 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                           <p className="text-[10px] text-muted mt-0.5 truncate">{block.data.url}</p>
                         </div>
                       )}
+
+                      {/* RECURSO EXTERNO */}
+                      {block.type === "external-embed" && (
+                        <div className="border border-border rounded-xl overflow-hidden bg-surface-3 text-ink p-4 text-center my-1">
+                          <IconLink className="w-8 h-8 mx-auto text-cyan-500 mb-2" />
+                          <p className="text-xs font-bold truncate">{block.data.title || "Recurso Externo"}</p>
+                          <p className="text-[10px] text-muted mt-0.5 truncate">{block.data.embedUrl}</p>
+                        </div>
+                      )}
+
+                      {/* BLOCOS PROJETOX (flipcard, timeline, tabela, capa, galeria, exercícios...) */}
+                      {isProjxBlock(block.type) && (
+                        <ProjxBlockPreview block={block} apiBase={apiBase} projectId={projectId} />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -392,3 +487,32 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
     </div>
   );
 };
+
+/* ------------------------------------------------------------------ */
+/* Helpers do canvas                                                   */
+/* ------------------------------------------------------------------ */
+
+const RichBlock: React.FC<{ html: string; className?: string }> = ({ html, className = "" }) => (
+  <div
+    className={`text-xs leading-relaxed [&_p]:my-1 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_mark]:bg-yellow-200 [&_mark]:text-ink ${className}`}
+    dangerouslySetInnerHTML={{ __html: html || "" }}
+  />
+);
+
+const BOX_PRESETS: Record<
+  string,
+  { title: string; icon: React.ReactNode; classes: string; titleClass: string }
+> = {
+  importante: { title: "IMPORTANTE!", icon: <LuTriangleAlert className="w-4 h-4" aria-hidden="true" />, classes: "bg-rose-500/10 border-rose-500 text-ink", titleClass: "text-rose-600" },
+  "saiba-mais": { title: "SAIBA MAIS...", icon: <LuSearch className="w-4 h-4" aria-hidden="true" />, classes: "bg-emerald-500/10 border-emerald-500 text-ink", titleClass: "text-emerald-600" },
+  dica: { title: "DICA!", icon: <LuLightbulb className="w-4 h-4" aria-hidden="true" />, classes: "bg-orange-500/10 border-orange-500 text-ink", titleClass: "text-orange-600" },
+  "voce-sabia": { title: "VOCÊ SABIA?", icon: <LuCircleHelp className="w-4 h-4" aria-hidden="true" />, classes: "bg-purple-500/10 border-purple-500 text-ink", titleClass: "text-purple-600" },
+  "box-pdf": { title: "PDF", icon: <LuFileText className="w-4 h-4" aria-hidden="true" />, classes: "bg-slate-500/10 border-slate-500 text-ink", titleClass: "text-slate-600" },
+  "vamos-refletir": { title: "VAMOS REFLETIR", icon: <LuMessageCircleQuestion className="w-4 h-4" aria-hidden="true" />, classes: "bg-cyan-500/10 border-cyan-500 text-ink", titleClass: "text-cyan-600" },
+  box: { title: "", icon: null, classes: "bg-surface-3 border-brand-red text-ink", titleClass: "text-brand-red" },
+  info: { title: "Informação", icon: <LuInfo className="w-4 h-4" aria-hidden="true" />, classes: "bg-blue-500/10 border-blue-500 text-ink", titleClass: "text-blue-600" },
+  tip: { title: "Dica", icon: <LuLightbulb className="w-4 h-4" aria-hidden="true" />, classes: "bg-emerald-500/10 border-emerald-500 text-ink", titleClass: "text-emerald-600" },
+  warning: { title: "Atenção", icon: <LuTriangleAlert className="w-4 h-4" aria-hidden="true" />, classes: "bg-amber-500/10 border-amber-500 text-ink", titleClass: "text-amber-600" },
+  curiosity: { title: "Curiosidade", icon: <LuSearch className="w-4 h-4" aria-hidden="true" />, classes: "bg-purple-500/10 border-purple-500 text-ink", titleClass: "text-purple-600" },
+};
+

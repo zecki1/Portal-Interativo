@@ -224,8 +224,8 @@ function classifyParagraph(styleKey: string, text: string): ParagraphRole {
   if (/img_credito|img_origem|credito/.test(key)) return "credit";
   if (/img_legenda|legenda/.test(key)) return "caption";
   if (/rodape|folio|numero_pagina/.test(key)) return "skip";
-  if (/h00|titulo_abertura|titulo_capa|abertura/.test(key)) return "heading2";
-  if (/h1|h4|h3|h2|vinheta|titulo_boxe|titulo_terceiros|titulo_secao|titulo/.test(key)) return "heading3";
+  if (/h00|titulo_abertura|titulo_capa|abertura|peso1/.test(key)) return "heading2";
+  if (/h1|h4|h3|h2|vinheta|titulo_boxe|titulo_terceiros|titulo_secao|titulo|peso2|peso3|meu-repertorio|meu_repertorio/.test(key)) return "heading3";
   if (/icone|icon/.test(key)) return "skip";
 
   const trimmed = text.trim();
@@ -262,6 +262,12 @@ function renderInline(nodes: any[], depth = 0): InlineResult {
 
     if (tag === "Content") {
       const value = textOf(node);
+      // Frases em runs separados sem <Br/>: restaura o espaço após pontuação
+      // final (ex.: "...blocos de montar." + "Na seção STEAM...").
+      if (/[.!?;:]\s*$/.test(text) && /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(value)) {
+        text += " ";
+        html += " ";
+      }
       text += value;
       html += escapeHtml(value);
       continue;
@@ -310,10 +316,13 @@ function parseStoryXML(storyXml: string): StoryParagraph[] {
   walk(doc);
 
   const result: StoryParagraph[] = [];
+  // Caracteres invisíveis do InDesign (joiner/BOM/zero-width) que "cortam" palavras.
+  const INVISIBLE = /[\uFEFF\u200B\u200C\u200D\u2060\u00AD]/g;
   for (const p of paragraphs) {
     const styleKey = styleKeyOf(attrsOf(p).AppliedParagraphStyle);
     const inline = renderInline(kidsOf(p));
     const text = inline.text
+      .replace(INVISIBLE, "")
       .replace(/<\?ACE\s*\d+\?>/g, "\u0000")
       .replace(/[\u0000]+/g, "")
       .replace(/[ \t]+/g, " ")
@@ -321,12 +330,23 @@ function parseStoryXML(storyXml: string): StoryParagraph[] {
     if (!text) continue;
     const role = classifyParagraph(styleKey, text);
     if (role === "skip") continue;
-    result.push({
-      text,
-      html: inline.html.replace(/<\?ACE\s*\d+\?>/g, "").trim(),
-      styleKey,
-      role,
-    });
+
+    let html = inline.html.replace(INVISIBLE, "").replace(/<\?ACE\s*\d+\?>/g, "").trim();
+
+    // Estilos de lista do SESI: cada run separado por <Br/> vira um <li>.
+    if (/lista_marcador|lista_numerada|lista_alfabetica|lista_marcadores/.test(styleKey)) {
+      const items = html
+        .split(/<br\s*\/?>/i)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (items.length > 0) {
+        const ordered = /numerada|alfabetica/.test(styleKey);
+        const tag = ordered ? "ol" : "ul";
+        html = `<${tag}>${items.map((i) => `<li>${i}</li>`).join("")}</${tag}>`;
+      }
+    }
+
+    result.push({ text, html, styleKey, role });
   }
   return result;
 }
@@ -735,28 +755,31 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
               },
               layout: local(item.bounds),
             } as Block);
-          } else if (/\.(ai|pdf|psd|eps|indd)$/i.test(cleanName)) {
+          } else {
             if (dbg) dbg.missingLinks += 1;
+            // Arquivo vinculado não disponível (vetor .ai/.pdf ou raster ausente):
+            // vira bloco de imagem placeholder, vinculável no editor (sem callout).
+            if (!/^cclibraries:/i.test(item.link)) {
+              pushAsset({
+                id: randomUUID(),
+                fileName: cleanName,
+                path: `assets/${cleanName}`,
+                mimeType: "image/placeholder",
+                altText: cleanName,
+              });
+            }
             blocks.push({
               id: randomUUID(),
-              type: "callout",
+              type: "image",
               data: {
-                variant: "warning",
-                title: "Arte vetorial não convertida",
-                contentHtml: `O arquivo <strong>${escapeHtml(cleanName)}</strong> é um vetor que não pôde ser rasterizado automaticamente. Exporte-o como PNG no InDesign e converta novamente.`,
+                src: "",
+                alt: cleanName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "),
+                missing: true,
+                fileName: cleanName,
+                enableZoom: true,
               },
               layout: local(item.bounds),
             } as Block);
-          } else if (!/^cclibraries:/i.test(item.link)) {
-            if (dbg) dbg.missingLinks += 1;
-            // Referência sem arquivo disponível (ex.: links do Creative Cloud).
-            pushAsset({
-              id: randomUUID(),
-              fileName: cleanName,
-              path: `assets/${cleanName}`,
-              mimeType: "image/placeholder",
-              altText: cleanName,
-            });
           }
         }
       }
@@ -777,11 +800,11 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
 }
 
 const INTERACTION_LABEL: Record<Exclude<InteractionKind, null>, { title: string; description: string }> = {
-  video: { title: "🎬 Vídeo", description: "Espaço reservado para um vídeo. Configure a URL no editor." },
-  audio: { title: "🎧 Áudio / Podcast", description: "Espaço reservado para um podcast ou áudio." },
-  link: { title: "🔗 Link externo", description: "Espaço reservado para um link clicável." },
-  zoom: { title: "🔍 Imagem ampliável", description: "Espaço reservado para uma imagem com zoom." },
-  activity: { title: "🎯 Atividade interativa", description: "Espaço reservado para uma atividade (quiz)." },
+  video: { title: "Vídeo", description: "Espaço reservado para um vídeo. Configure a URL no editor." },
+  audio: { title: "Áudio / Podcast", description: "Espaço reservado para um podcast ou áudio." },
+  link: { title: "Link externo", description: "Espaço reservado para um link clicável." },
+  zoom: { title: "Imagem ampliável", description: "Espaço reservado para uma imagem com zoom." },
+  activity: { title: "Atividade interativa", description: "Espaço reservado para uma atividade (quiz)." },
 };
 
 function overlapArea(a: Bounds, b: Bounds): number {

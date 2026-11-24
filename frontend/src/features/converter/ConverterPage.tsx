@@ -24,6 +24,10 @@ export default function ConverterPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [creatingExemplo, setCreatingExemplo] = useState(false);
+  const [queue, setQueue] = useState<
+    { file: File; status: "pendente" | "convertendo" | "ok" | "erro"; message?: string; projectId?: string }[]
+  >([]);
 
   const apiBase =
     import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:3002/api/v1`;
@@ -44,6 +48,20 @@ export default function ConverterPage() {
     loadProjects();
   }, []);
 
+  // Documento-modelo com todos os blocos: criado no backend e aberto no editor.
+  const handleCreateExemplo = async () => {
+    setCreatingExemplo(true);
+    setError(null);
+    try {
+      const res = await apiFetch<ProjectMeta>("/projects/exemplo", { method: "POST" });
+      if (res.data) navigate(`/editor/${res.data.id}`);
+    } catch (e: any) {
+      setError(e.message || "Não foi possível criar o material de exemplo.");
+    } finally {
+      setCreatingExemplo(false);
+    }
+  };
+
   const handleFileUpload = async (file: File) => {
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     if (ext === ".indd") {
@@ -52,8 +70,8 @@ export default function ConverterPage() {
       );
       return;
     }
-    if (ext !== ".pdf" && ext !== ".idml") {
-      setError("Formato não suportado. Por favor, envie um arquivo .pdf ou .idml.");
+    if (ext !== ".pdf" && ext !== ".idml" && ext !== ".zip") {
+      setError("Formato não suportado. Por favor, envie um arquivo .pdf, .idml ou .zip (IDML + Links/).");
       return;
     }
 
@@ -77,6 +95,41 @@ export default function ConverterPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Lote: vários arquivos → cada um vira um projeto vinculado na lista abaixo.
+  const handleFiles = async (files: File[]) => {
+    const valid: File[] = [];
+    const rejected: string[] = [];
+    for (const f of files) {
+      const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
+      if (ext === ".pdf" || ext === ".idml" || ext === ".zip") valid.push(f);
+      else rejected.push(f.name);
+    }
+    if (rejected.length) {
+      setError(`Ignorado(s) por formato não suportado: ${rejected.join(", ")}. Use .pdf, .idml ou .zip (IDML + Links/).`);
+    }
+    if (!valid.length) return;
+    if (valid.length === 1) return handleFileUpload(valid[0]);
+
+    setUploading(true);
+    setError(null);
+    setQueue(valid.map((file) => ({ file, status: "pendente" })));
+    for (let i = 0; i < valid.length; i++) {
+      setQueue((q) => q.map((it, j) => (j === i ? { ...it, status: "convertendo" } : it)));
+      try {
+        const fd = new FormData();
+        fd.append("file", valid[i]);
+        const res = await apiFetch<ProjectMeta>("/convert", { method: "POST", body: fd });
+        setQueue((q) =>
+          q.map((it, j) => (j === i ? { ...it, status: "ok", projectId: res.data?.id, message: res.data?.name } : it))
+        );
+        loadProjects();
+      } catch (e: any) {
+        setQueue((q) => q.map((it, j) => (j === i ? { ...it, status: "erro", message: e.message || "Falha" } : it)));
+      }
+    }
+    setUploading(false);
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -147,8 +200,8 @@ export default function ConverterPage() {
           onDrop={(e) => {
             e.preventDefault();
             setIsDragOver(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) handleFileUpload(file);
+            const files = Array.from(e.dataTransfer.files || []);
+            if (files.length) handleFiles(files);
           }}
           className={`relative rounded-3xl border-2 border-dashed p-10 text-center transition-all duration-200 flex flex-col items-center justify-center ${isDragOver
               ? "border-brand-red bg-brand-red/10 scale-[1.01]"
@@ -159,11 +212,13 @@ export default function ConverterPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.idml,.indd"
+            accept=".pdf,.idml,.indd,.zip"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileUpload(file);
+              const files = Array.from(e.target.files || []);
+              if (files.length) handleFiles(files);
+              e.target.value = "";
             }}
           />
 
@@ -183,18 +238,103 @@ export default function ConverterPage() {
                 <IconUpload className="w-8 h-8" />
               </div>
               <h3 className="text-lg font-bold text-ink">
-                Arraste seu arquivo PDF ou IDML aqui
+                Arraste seus arquivos PDF ou IDML aqui
               </h3>
               <p className="text-xs text-muted mt-1">
-                ou clique para escolher um arquivo do seu computador
+                ou clique para escolher · vários arquivos = lote (cada um vira um projeto vinculado)
               </p>
               <div className="mt-4 flex items-center gap-2 text-xs font-semibold">
                 <span className="px-2.5 py-1 rounded-md bg-surface-3 text-ink border border-border">.PDF</span>
                 <span className="px-2.5 py-1 rounded-md bg-surface-3 text-ink border border-border">.IDML (InDesign)</span>
+                <span className="px-2.5 py-1 rounded-md bg-surface-3 text-ink border border-border">.ZIP (IDML + Links/)</span>
               </div>
             </div>
           )}
         </div>
+
+        {/* Documento-modelo: cria um projeto com todos os blocos preenchidos */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-4">
+          <div className="flex items-start gap-3">
+            <IconSparkles className="w-5 h-5 shrink-0 text-brand-red mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-bold text-ink">Primeira vez por aqui?</p>
+              <p className="text-xs text-muted">
+                Crie um material de exemplo com <strong>todos os blocos</strong> preenchidos para explorar o editor.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCreateExemplo}
+            disabled={creatingExemplo}
+            className="shrink-0 rounded-xl border border-brand-red/40 bg-brand-red/10 px-4 py-2 text-xs font-bold text-brand-red hover:bg-brand-red hover:text-white transition disabled:opacity-50 disabled:cursor-wait"
+          >
+            {creatingExemplo ? "Criando exemplo…" : "Criar material de exemplo"}
+          </button>
+        </div>
+        {/* Fila de conversão em lote — cada arquivo vira um projeto vinculado */}
+        {queue.length > 0 && (
+          <div className="rounded-2xl border border-border bg-surface p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-ink">
+                Fila de conversão ({queue.filter((q) => q.status === "ok").length}/{queue.length})
+              </h2>
+              <button
+                onClick={() => setQueue([])}
+                disabled={uploading}
+                className="text-xs font-bold text-muted hover:text-brand-red disabled:opacity-40"
+              >
+                Limpar fila
+              </button>
+            </div>
+            <ul className="space-y-2" aria-live="polite">
+              {queue.map((it, i) => (
+                <li
+                  key={`${it.file.name}-${i}`}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-xs"
+                >
+                  <IconFile className="w-4 h-4 shrink-0 text-muted" />
+                  <span className="flex-1 truncate font-semibold text-ink" title={it.file.name}>
+                    {it.file.name}
+                  </span>
+                  {it.status === "erro" && (
+                    <span className="max-w-[40%] truncate text-brand-red" title={it.message}>
+                      {it.message}
+                    </span>
+                  )}
+                  {it.status === "ok" && it.projectId ? (
+                    <Link
+                      to={`/editor/${it.projectId}`}
+                      className="shrink-0 rounded-lg bg-brand-red px-3 py-1.5 font-bold text-white hover:bg-brand-red-dark transition"
+                    >
+                      Abrir Editor
+                    </Link>
+                  ) : (
+                    <span
+                      className={`shrink-0 rounded-full px-3 py-1 font-bold ${
+                        it.status === "ok"
+                          ? "bg-green-500/10 text-green-500 border border-green-500/30"
+                          : it.status === "erro"
+                            ? "bg-brand-red/10 text-brand-red border border-brand-red/30"
+                            : it.status === "convertendo"
+                              ? "bg-purple-500/10 text-purple-400 border border-purple-500/30"
+                              : "bg-surface-3 text-muted border border-border"
+                      }`}
+                    >
+                      {it.status === "ok"
+                        ? "convertido"
+                        : it.status === "erro"
+                          ? "erro"
+                          : it.status === "convertendo"
+                            ? "convertendo…"
+                            : "pendente"}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Seção de Livros Convertidos */}
         <div className="space-y-4">

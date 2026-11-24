@@ -6,6 +6,8 @@ import { SidebarPanels } from "./SidebarPanels";
 import { BlockCanvas } from "./BlockCanvas";
 import { BlockInspector } from "./BlockInspector";
 import { PreviewModal } from "./PreviewModal";
+import { newId } from "../../lib/ids";
+import { useLocale, LOCALES } from "../../lib/i18n";
 import {
   IconChevronLeft,
   IconEye,
@@ -18,6 +20,7 @@ import {
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { locale, setLocale, t } = useLocale();
 
   const [doc, setDoc] = useState<ProjectDocument | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,17 +100,17 @@ export default function EditorPage() {
     updateDoc((prev) => {
       const newPageNumber = prev.pages.length + 1;
       const newPage: ProjectPage = {
-        id: String(Date.now()),
+        id: newId("page"),
         pageNumber: newPageNumber,
         title: `Página ${newPageNumber}`,
         blocks: [
           {
-            id: String(Date.now() + 1),
+            id: newId("block"),
             type: "heading",
             data: { level: 2, text: `Seção da Página ${newPageNumber}` },
           },
           {
-            id: String(Date.now() + 2),
+            id: newId("block"),
             type: "paragraph",
             data: { html: "Digite aqui o conteúdo da nova página..." },
           },
@@ -127,12 +130,12 @@ export default function EditorPage() {
       const source = prev.pages[index];
       const cloned: ProjectPage = {
         ...JSON.parse(JSON.stringify(source)),
-        id: String(Date.now()),
+        id: newId("page"),
         pageNumber: prev.pages.length + 1,
         title: `${source.title || "Página"} (Cópia)`,
       };
       cloned.blocks.forEach((b: Block) => {
-        b.id = String(Math.random());
+        b.id = newId("block");
       });
       return {
         ...prev,
@@ -153,6 +156,26 @@ export default function EditorPage() {
         ...prev,
         pages: filtered,
       };
+    });
+  };
+
+  /** Junta a página atual com a seguinte: os blocos são concatenados. */
+  const handleMergeWithNext = (index: number) => {
+    updateDoc((prev) => {
+      if (index < 0 || index >= prev.pages.length - 1) return prev;
+      const current = prev.pages[index];
+      const next = prev.pages[index + 1];
+      const merged: ProjectPage = {
+        ...current,
+        title: current.title || next.title,
+        blocks: [...current.blocks, ...next.blocks],
+      };
+      const pages = prev.pages
+        .filter((_, i) => i !== index + 1)
+        .map((p, i) => (i === index ? merged : p))
+        .map((p, i) => ({ ...p, pageNumber: i + 1 }));
+      setActivePageIndex(index);
+      return { ...prev, pages };
     });
   };
 
@@ -200,7 +223,7 @@ export default function EditorPage() {
       const idx = currentPage.blocks.findIndex((b) => b.id === blockId);
       if (idx === -1) return prev;
       const cloned = JSON.parse(JSON.stringify(currentPage.blocks[idx]));
-      cloned.id = String(Date.now());
+      cloned.id = newId("block");
       currentPage.blocks.splice(idx + 1, 0, cloned);
       setSelectedBlockId(cloned.id);
       return { ...prev, pages };
@@ -262,6 +285,8 @@ export default function EditorPage() {
           ...targetBlock.data,
           src,
           alt,
+          missing: false,
+          fileName: undefined,
         },
       });
     } else {
@@ -273,8 +298,8 @@ export default function EditorPage() {
     return (
       <div className="min-h-screen bg-surface-2 flex flex-col items-center justify-center p-6 text-muted">
         <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-sm font-bold text-ink">Carregando livro interativo...</p>
-        <p className="text-xs text-muted mt-1">Carregando páginas, mídias e blocos editáveis.</p>
+        <p className="text-sm font-bold text-ink">{t("editor.loading")}</p>
+        <p className="text-xs text-muted mt-1">{t("editor.loadingHint")}</p>
       </div>
     );
   }
@@ -283,13 +308,13 @@ export default function EditorPage() {
     return (
       <div className="min-h-screen bg-surface-2 flex flex-col items-center justify-center p-6 text-center">
         <IconAlert className="w-12 h-12 text-brand-red mb-3" />
-        <h2 className="text-lg font-bold text-ink">Falha ao carregar o livro</h2>
+        <h2 className="text-lg font-bold text-ink">{t("editor.loadError")}</h2>
         <p className="text-xs text-muted mt-1 max-w-md">{error || "Projeto não encontrado."}</p>
         <button
           onClick={() => navigate("/")}
           className="mt-4 px-4 py-2 bg-brand-red text-white text-xs font-bold rounded-xl hover:bg-brand-red-dark transition shadow-sm"
         >
-          Voltar para Projetos
+          {t("editor.backToProjects")}
         </button>
       </div>
     );
@@ -311,7 +336,7 @@ export default function EditorPage() {
             title="Voltar ao Catálogo de Livros"
           >
             <IconChevronLeft className="w-4 h-4" />
-            <span>Voltar</span>
+            <span>{t("editor.back")}</span>
           </button>
           <div className="h-4 w-px bg-border" />
           <div className="flex items-center gap-2">
@@ -336,16 +361,16 @@ export default function EditorPage() {
             {saveStatus === "saved" && (
               <>
                 <IconCheck className="w-4 h-4 text-emerald-500" />
-                <span className="text-emerald-500 font-semibold text-[11px]">Salvo</span>
+                <span className="text-emerald-500 font-semibold text-[11px]">{t("editor.saved")}</span>
               </>
             )}
             {saveStatus === "saving" && (
               <span className="text-amber-500 font-semibold text-[11px] animate-pulse">
-                Salvando...
+                {t("editor.saving")}
               </span>
             )}
             {saveStatus === "unsaved" && (
-              <span className="text-muted text-[11px]">Alterações pendentes</span>
+              <span className="text-muted text-[11px]">{t("editor.unsaved")}</span>
             )}
           </div>
 
@@ -361,8 +386,25 @@ export default function EditorPage() {
             title="Abrir/Fechar Propriedades do Bloco"
           >
             <IconSliders className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Propriedades</span>
+            <span className="hidden sm:inline">{t("editor.properties")}</span>
           </button>
+
+          {/* Seletor de idioma da interface (i18n) */}
+          <label className="flex items-center gap-1 text-[11px] font-bold text-muted">
+            <span className="sr-only">{t("editor.language")}</span>
+            <select
+              value={locale}
+              onChange={(e) => setLocale(e.target.value as typeof locale)}
+              title={t("editor.language")}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-[11px] font-bold text-ink hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-brand-red/40"
+            >
+              {LOCALES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {/* Botão Preview */}
           <button
@@ -370,7 +412,7 @@ export default function EditorPage() {
             className="p-1.5 px-3 rounded-xl bg-surface-3 hover:bg-surface text-ink border border-border text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconEye className="w-4 h-4 text-brand-red" />
-            <span>Visualizar (Preview)</span>
+            <span>{t("editor.preview")}</span>
           </button>
 
           {/* Botão Exportar Web ZIP */}
@@ -379,7 +421,7 @@ export default function EditorPage() {
             className="p-1.5 px-4 rounded-xl bg-brand-red hover:bg-brand-red-dark text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconDownload className="w-4 h-4" />
-            <span>Exportar Web (.ZIP)</span>
+            <span>{t("editor.export")}</span>
           </a>
         </div>
       </header>
@@ -396,6 +438,7 @@ export default function EditorPage() {
           onAddPage={handleAddPage}
           onDuplicatePage={handleDuplicatePage}
           onDeletePage={handleDeletePage}
+          onMergePageWithNext={handleMergeWithNext}
           onAddBlock={handleAddBlock}
           onUploadAsset={handleUploadAsset}
           selectedBlockId={selectedBlockId}
@@ -449,7 +492,7 @@ export default function EditorPage() {
 }
 
 function createEmptyBlock(type: BlockType, assetSrc?: string): Block {
-  const id = String(Date.now());
+  const id = newId("block");
   switch (type) {
     case "heading":
       return { id, type: "heading", data: { level: 2, text: "Novo Título de Seção" } };
@@ -473,8 +516,8 @@ function createEmptyBlock(type: BlockType, assetSrc?: string): Block {
         data: {
           title: "Tópicos de Aprofundamento",
           items: [
-            { id: String(Date.now() + 1), title: "Tópico 1", contentHtml: "Explicação do primeiro tópico...", defaultOpen: true },
-            { id: String(Date.now() + 2), title: "Tópico 2", contentHtml: "Explicação do segundo tópico...", defaultOpen: false },
+            { id: newId("item"), title: "Tópico 1", contentHtml: "Explicação do primeiro tópico...", defaultOpen: true },
+            { id: newId("item"), title: "Tópico 2", contentHtml: "Explicação do segundo tópico...", defaultOpen: false },
           ],
         },
       };
@@ -484,8 +527,8 @@ function createEmptyBlock(type: BlockType, assetSrc?: string): Block {
         type: "tabs",
         data: {
           items: [
-            { id: String(Date.now() + 1), label: "Aba 1", contentHtml: "Conteúdo da primeira aba..." },
-            { id: String(Date.now() + 2), label: "Aba 2", contentHtml: "Conteúdo da segunda aba..." },
+            { id: newId("item"), label: "Aba 1", contentHtml: "Conteúdo da primeira aba..." },
+            { id: newId("item"), label: "Aba 2", contentHtml: "Conteúdo da segunda aba..." },
           ],
         },
       };
@@ -506,8 +549,8 @@ function createEmptyBlock(type: BlockType, assetSrc?: string): Block {
         data: {
           question: "Qual o conceito principal abordado nesta seção?",
           options: [
-            { id: String(Date.now() + 1), text: "Conceito A (Correto)", isCorrect: true },
-            { id: String(Date.now() + 2), text: "Conceito B (Incorreto)", isCorrect: false },
+            { id: newId("item"), text: "Conceito A (Correto)", isCorrect: true },
+            { id: newId("item"), text: "Conceito B (Incorreto)", isCorrect: false },
           ],
           explanation: "O Conceito A está correto de acordo com a definição apresentada no capítulo.",
         },
@@ -531,5 +574,208 @@ function createEmptyBlock(type: BlockType, assetSrc?: string): Block {
           title: "Simulador Interativo PhET",
         },
       };
+
+    /* ---------- Conteúdo ProjetoX ---------- */
+    case "flipcard":
+      return {
+        id,
+        type: "flipcard",
+        data: {
+          title: "Você sabia?",
+          frontHtml: "Passe o olhar pela imagem e clique para descobrir uma curiosidade.",
+          backHtml: "Os animais que põem ovos são chamados de <strong>ovíparos</strong>.",
+          hint: "Clique para virar",
+        },
+      };
+    case "timeline":
+      return {
+        id,
+        type: "timeline",
+        data: {
+          title: "Linha do tempo",
+          items: [
+            { id: id + "-1", title: "Primeiro passo", contentHtml: "Descreva o primeiro momento.", icon: "1" },
+            { id: id + "-2", title: "Segundo passo", contentHtml: "Descreva o segundo momento.", icon: "2" },
+            { id: id + "-3", title: "Terceiro passo", contentHtml: "Descreva o terceiro momento.", icon: "3" },
+          ],
+        },
+      };
+    case "table":
+      return {
+        id,
+        type: "table",
+        data: {
+          caption: "Tabela comparativa",
+          headers: ["Animal", "Característica"],
+          rows: [
+            ["Tucano", "Bico grande e colorido"],
+            ["Onça", "Pelagem pintada"],
+          ],
+          striped: true,
+        },
+      };
+    case "cover":
+      return {
+        id,
+        type: "cover",
+        data: {
+          title: "Título da Unidade",
+          subtitle: "Um subtítulo curto que apresenta o tema.",
+          ctaLabel: "Começar",
+          ctaHref: "#page-content",
+          align: "left",
+        },
+      };
+    case "parallax":
+      return {
+        id,
+        type: "parallax",
+        data: { image: "", title: "Separe os conteúdos", subtitle: "Use esta faixa para marcar uma nova parte do material.", height: 280 },
+      };
+    case "gallery":
+      return {
+        id,
+        type: "gallery",
+        data: {
+          items: [
+            { id: id + "-1", src: "assets/img_1.jpg", caption: "Imagem 1" },
+            { id: id + "-2", src: "assets/img_1.jpg", caption: "Imagem 2" },
+          ],
+        },
+      };
+    case "image-text-card":
+      return {
+        id,
+        type: "image-text-card",
+        data: {
+          image: "assets/img_1.jpg",
+          title: "Imagem e texto",
+          html: "<p>Descreva aqui a relação entre a imagem e o conteúdo.</p>",
+          layout: "left",
+        },
+      };
+    case "highlight":
+      return {
+        id,
+        type: "highlight",
+        data: {
+          title: "Destaque",
+          html: "<p>As palavras <mark>importantes</mark> aparecem destacadas no texto.</p>",
+          legend: "Use ==palavra== para destacar.",
+        },
+      };
+    case "code":
+      return {
+        id,
+        type: "code",
+        data: { filename: "exemplo.js", language: "javascript", code: "console.log('Olá, mundo!');" },
+      };
+
+    /* ---------- Exercícios ProjetoX ---------- */
+    case "multiple-choice":
+      return {
+        id,
+        type: "multiple-choice",
+        data: {
+          question: "Qual alternativa está correta?",
+          options: [
+            { id: id + "-1", text: "Alternativa correta" },
+            { id: id + "-2", text: "Alternativa incorreta" },
+            { id: id + "-3", text: "Outra alternativa incorreta" },
+          ],
+          correctIds: [id + "-1"],
+          attempts: 2,
+          explanation: "Explique por que a alternativa é correta.",
+        },
+      };
+    case "true-false":
+      return {
+        id,
+        type: "true-false",
+        data: {
+          question: "Classifique as afirmações em verdadeiro ou falso.",
+          statements: [
+            { id: id + "-1", text: "Primeira afirmação verdadeira.", answer: true },
+            { id: id + "-2", text: "Segunda afirmação falsa.", answer: false },
+          ],
+          attempts: 2,
+        },
+      };
+    case "fill-blanks":
+      return {
+        id,
+        type: "fill-blanks",
+        data: {
+          question: "Complete as lacunas.",
+          sentences: [
+            { id: id + "-1", text: "O ____ é um animal que põe ovos.", answers: ["tucano"] },
+          ],
+          attempts: 2,
+        },
+      };
+    case "ordering":
+      return {
+        id,
+        type: "ordering",
+        data: {
+          question: "Coloque os acontecimentos na ordem correta.",
+          items: [
+            { id: id + "-1", text: "Primeiro acontecimento" },
+            { id: id + "-2", text: "Segundo acontecimento" },
+            { id: id + "-3", text: "Terceiro acontecimento" },
+          ],
+          attempts: 2,
+        },
+      };
+    case "matching":
+      return {
+        id,
+        type: "matching",
+        data: {
+          question: "Relacione as colunas.",
+          pairs: [
+            { id: id + "-1", left: "Tucano", right: "Bico grande" },
+            { id: id + "-2", left: "Onça", right: "Pelagem pintada" },
+            { id: id + "-3", left: "Cobra", right: "Não tem patas" },
+          ],
+          attempts: 2,
+        },
+      };
+    case "memory-game":
+      return {
+        id,
+        type: "memory-game",
+        data: {
+          title: "Encontre os pares",
+          pairs: [
+            { id: id + "-1", a: "Tucano", b: "Bico" },
+            { id: id + "-2", a: "Onça", b: "Pintas" },
+            { id: id + "-3", a: "Cobra", b: "Escamas" },
+            { id: id + "-4", a: "Peixe", b: "Nadadeiras" },
+          ],
+          columns: 4,
+        },
+      };
+    case "word-search":
+      return {
+        id,
+        type: "word-search",
+        data: { title: "Encontre as palavras", words: ["TUCANO", "ONCA", "COBRA", "PEIXE"], size: 12 },
+      };
+    case "crossword":
+      return {
+        id,
+        type: "crossword",
+        data: {
+          title: "Palavras cruzadas",
+          entries: [
+            { id: id + "-1", answer: "ANIMAIS", clue: "Seres vivos que se movem e se alimentam." },
+            { id: id + "-2", answer: "TUCANO", clue: "Ave de bico grande e colorido." },
+            { id: id + "-3", answer: "ONCA", clue: "Felino de pelagem pintada." },
+          ],
+        },
+      };
+    default:
+      return { id, type: "paragraph", data: { html: "Novo bloco." } } as Block;
   }
 }

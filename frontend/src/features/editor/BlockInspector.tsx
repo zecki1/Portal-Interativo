@@ -1,5 +1,17 @@
 import React from "react";
-import type { Block, ProjectAsset } from "../../types/project";
+import type { Block, ProjectAsset, ImageHotspot } from "../../types/project";
+import { BlockSchemaEditor, hasSchema } from "./BlockSchemaEditor";
+import { newId } from "../../lib/ids";
+import {
+  LuImage,
+  LuTriangleAlert,
+  LuSearch,
+  LuLightbulb,
+  LuCircleHelp,
+  LuFileText,
+  LuMessageCircleQuestion,
+  LuSquare,
+} from "react-icons/lu";
 import {
   IconTrash,
   IconCopy,
@@ -150,16 +162,56 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
           <div className="space-y-4">
             <div>
               <label className="font-bold text-ink block mb-1.5">Pré-visualização da Imagem</label>
-              <div className="rounded-lg border border-border overflow-hidden bg-surface-3 p-2 text-center">
-                <img
-                  src={`${apiBase}/projects/${projectId}/preview/${block.data.src}`}
-                  alt={block.data.alt}
-                  className="max-h-36 mx-auto object-contain rounded"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = "none";
-                  }}
-                />
-              </div>
+              {block.data.missing || !block.data.src ? (
+                <div className="rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 p-3 text-center">
+                  <p className="text-[11px] font-bold text-amber-800 break-all inline-flex items-center gap-1">
+                    <LuImage className="w-3.5 h-3.5" aria-hidden="true" />
+                    {block.data.fileName || block.data.alt || "Imagem vinculada"}
+                  </p>
+                  <p className="text-[10px] text-amber-700 mt-1">
+                    O arquivo não veio no IDML. Envie em Mídias e vincule abaixo.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden bg-surface-3 p-2 text-center">
+                  <img
+                    src={`${apiBase}/projects/${projectId}/preview/${block.data.src}`}
+                    alt={block.data.alt}
+                    className="max-h-36 mx-auto object-contain rounded"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="font-bold text-ink block mb-1.5">Arquivo da Mídia</label>
+              <select
+                value={block.data.src || ""}
+                onChange={(e) => {
+                  const asset = assets.find((a) => a.path === e.target.value);
+                  onUpdateBlock({
+                    ...block,
+                    data: {
+                      ...block.data,
+                      src: e.target.value,
+                      alt: block.data.alt || asset?.altText || "",
+                      missing: false,
+                      fileName: undefined,
+                    },
+                  });
+                }}
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
+              >
+                <option value="">— Selecionar da pasta de mídias —</option>
+                {assets.map((a) => (
+                  <option key={a.id} value={a.path}>
+                    {a.fileName}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -230,6 +282,13 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                 />
               </div>
             </div>
+
+            <HotspotEditor
+              hotspots={block.data.hotspots || []}
+              onChange={(hotspots) =>
+                onUpdateBlock({ ...block, data: { ...block.data, hotspots } })
+              }
+            />
           </div>
         )}
 
@@ -260,7 +319,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     const newItems = [
                       ...(block.data.items || []),
                       {
-                        id: String(Date.now()),
+                        id: newId("item"),
                         title: `Novo Tópico ${(block.data.items?.length || 0) + 1}`,
                         contentHtml: "Conteúdo detalhado deste tópico...",
                         defaultOpen: false,
@@ -336,12 +395,15 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
           <div className="space-y-4">
             <div>
               <label className="font-bold text-ink block mb-1.5">Tipo de Destaque</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: "tip", label: "💡 Dica", color: "border-green-500 bg-green-500/10 text-ink" },
-                  { id: "info", label: "ℹ️ Informação", color: "border-blue-500 bg-blue-500/10 text-ink" },
-                  { id: "warning", label: "⚠️ Atenção", color: "border-amber-500 bg-amber-500/10 text-ink" },
-                  { id: "curiosity", label: "🔍 Curiosidade", color: "border-purple-500 bg-purple-500/10 text-ink" },
+                  { id: "importante", label: "Importante", icon: <LuTriangleAlert className="w-4 h-4" aria-hidden="true" />, color: "border-rose-500 bg-rose-500/10 text-ink" },
+                  { id: "saiba-mais", label: "Saiba Mais", icon: <LuSearch className="w-4 h-4" aria-hidden="true" />, color: "border-emerald-500 bg-emerald-500/10 text-ink" },
+                  { id: "dica", label: "Dica", icon: <LuLightbulb className="w-4 h-4" aria-hidden="true" />, color: "border-orange-500 bg-orange-500/10 text-ink" },
+                  { id: "voce-sabia", label: "Você Sabia", icon: <LuCircleHelp className="w-4 h-4" aria-hidden="true" />, color: "border-purple-500 bg-purple-500/10 text-ink" },
+                  { id: "box-pdf", label: "PDF", icon: <LuFileText className="w-4 h-4" aria-hidden="true" />, color: "border-slate-500 bg-slate-500/10 text-ink" },
+                  { id: "vamos-refletir", label: "Refletir", icon: <LuMessageCircleQuestion className="w-4 h-4" aria-hidden="true" />, color: "border-cyan-500 bg-cyan-500/10 text-ink" },
+                  { id: "box", label: "Caixa", icon: <LuSquare className="w-4 h-4" aria-hidden="true" />, color: "border-border bg-surface-3 text-ink" },
                 ].map((v) => (
                   <button
                     key={v.id}
@@ -352,16 +414,23 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                         data: { ...block.data, variant: v.id as any },
                       })
                     }
-                    className={`py-2 px-3 rounded-lg border font-bold text-left transition ${
+                    className={`py-2 px-1.5 rounded-lg border font-bold text-[10px] text-left transition ${
                       block.data.variant === v.id
                         ? `${v.color} ring-2 ring-brand-red ring-offset-1`
                         : "bg-surface-3 border-border text-muted hover:text-ink"
                     }`}
+                    aria-pressed={block.data.variant === v.id}
                   >
-                    {v.label}
+                    <span className="inline-flex items-center gap-1">
+                      {v.icon}
+                      {v.label}
+                    </span>
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-muted mt-1.5">
+                Deixe o título vazio para usar o padrão da caixa.
+              </p>
             </div>
 
             <div>
@@ -425,7 +494,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     const newOpts = [
                       ...(block.data.options || []),
                       {
-                        id: String(Date.now()),
+                        id: newId("item"),
                         text: `Opção ${(block.data.options?.length || 0) + 1}`,
                         isCorrect: false,
                       },
@@ -580,7 +649,137 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
           </div>
         )}
+
+        {/* BLOCO: RECURSO EXTERNO */}
+        {block.type === "external-embed" && (
+          <div className="space-y-4">
+            <div>
+              <label className="font-bold text-ink block mb-1.5">URL do Recurso (iframe)</label>
+              <input
+                type="url"
+                value={block.data.embedUrl}
+                onChange={(e) =>
+                  onUpdateBlock({ ...block, data: { ...block.data, embedUrl: e.target.value } })
+                }
+                placeholder="https://phet.colorado.edu/..."
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-ink block mb-1.5">Título</label>
+              <input
+                type="text"
+                value={block.data.title || ""}
+                onChange={(e) =>
+                  onUpdateBlock({ ...block, data: { ...block.data, title: e.target.value } })
+                }
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* BLOCOS PROJETOX — formulário gerado pelo esquema */}
+        {hasSchema(block.type) && <BlockSchemaEditor block={block} onUpdateBlock={onUpdateBlock} />}
       </div>
-    </aside>
+      </aside>
   );
 };
+
+/* ------------------------------------------------------------------ */
+/* Editor de zonas de clique (imagem interativa)                       */
+/* ------------------------------------------------------------------ */
+
+const HotspotEditor: React.FC<{
+  hotspots: ImageHotspot[];
+  onChange: (hotspots: ImageHotspot[]) => void;
+}> = ({ hotspots, onChange }) => {
+  const update = (id: string, patch: Partial<ImageHotspot>) =>
+    onChange(hotspots.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+
+  return (
+    <div className="pt-3 border-t border-border">
+      <div className="flex items-center justify-between mb-2">
+        <label className="font-bold text-ink">
+          Zonas de clique
+          <span className="block text-[10px] text-muted font-normal">
+            Posição em % da imagem. Abre um modal na publicação.
+          </span>
+        </label>
+        <button
+          type="button"
+          onClick={() =>
+            onChange([
+              ...hotspots,
+              {
+                id: newId("hotspot"),
+                x: 10,
+                y: 10,
+                w: 25,
+                h: 22,
+                title: `Zona ${hotspots.length + 1}`,
+                contentHtml: "Descreva aqui o que esta parte da imagem mostra.",
+              },
+            ])
+          }
+          className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-red hover:underline"
+        >
+          <IconPlus className="w-3 h-3" /> Zona
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {hotspots.map((h, i) => (
+          <div key={h.id} className="rounded-lg border border-border bg-surface-3 p-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-brand-red">
+                Zona {i + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(hotspots.filter((x) => x.id !== h.id))}
+                className="text-[11px] font-bold text-brand-red hover:underline"
+              >
+                remover
+              </button>
+            </div>
+            <input
+              className="w-full p-1.5 rounded border border-border bg-surface text-ink text-[11px] focus:border-brand-red focus:outline-none"
+              value={h.title}
+              placeholder="Título do modal"
+              onChange={(e) => update(h.id, { title: e.target.value })}
+            />
+            <textarea
+              className="w-full p-1.5 rounded border border-border bg-surface text-ink text-[11px] leading-relaxed focus:border-brand-red focus:outline-none"
+              rows={2}
+              value={h.contentHtml}
+              placeholder="Conteúdo do modal (aceita HTML)"
+              onChange={(e) => update(h.id, { contentHtml: e.target.value })}
+            />
+            <div className="grid grid-cols-4 gap-1">
+              {(["x", "y", "w", "h"] as const).map((k) => (
+                <label key={k} className="text-[9px] uppercase font-bold text-muted">
+                  {k === "w" ? "larg." : k === "h" ? "alt." : k}%
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="mt-0.5 w-full p-1 rounded border border-border bg-surface text-ink text-[10px] focus:border-brand-red focus:outline-none"
+                    value={h[k]}
+                    onChange={(e) => update(h.id, { [k]: Number(e.target.value) } as Partial<ImageHotspot>)}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        {!hotspots.length && (
+          <p className="text-[10px] text-muted italic">
+            Nenhuma zona. Adicione para tornar a imagem interativa.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+

@@ -35,6 +35,52 @@ export async function convertRoutes(app: FastifyInstance) {
     }
   });
 
+  // Upload em lote: cada arquivo vira um projeto independente (vinculado na lista).
+  // Falha em um arquivo não derruba os demais.
+  app.post("/convert/batch", async (req, reply) => {
+    const results: { file: string; ok: boolean; project?: converter.ProjectMeta; error?: string }[] = [];
+    let count = 0;
+    try {
+      for await (const file of req.files()) {
+        if (count >= 20) {
+          results.push({ file: file.filename, ok: false, error: "Limite de 20 arquivos por lote." });
+          await file.toBuffer().catch(() => {});
+          continue;
+        }
+        count++;
+        const tmpPath = path.join(os.tmpdir(), `upload-${randomUUID()}${path.extname(file.filename)}`);
+        try {
+          const buf = await file.toBuffer();
+          await fs.writeFile(tmpPath, buf);
+          const meta = await converter.convertFile(tmpPath, file.filename);
+          results.push({ file: file.filename, ok: true, project: meta });
+        } catch (err) {
+          results.push({
+            file: file.filename,
+            ok: false,
+            error: err instanceof Error ? err.message : "Falha na conversão do arquivo.",
+          });
+        } finally {
+          await fs.unlink(tmpPath).catch(() => {});
+        }
+      }
+    } catch (err) {
+      return reply.status(400).send({
+        data: null,
+        error: { message: err instanceof Error ? err.message : "Upload inválido." },
+        meta: null,
+      });
+    }
+    if (results.length === 0) {
+      return reply.status(400).send({ data: null, error: { message: "Nenhum arquivo enviado." }, meta: null });
+    }
+    return reply.send({
+      data: results,
+      error: null,
+      meta: { total: results.length, ok: results.filter((r) => r.ok).length },
+    });
+  });
+
   // Lista todos os projetos
   app.get("/projects", async (_req, reply) => {
     try {
@@ -84,6 +130,20 @@ export async function convertRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         data: null,
         error: { message: err instanceof Error ? err.message : "Erro ao salvar alterações no projeto." },
+        meta: null,
+      });
+    }
+  });
+
+  // Cria o documento-modelo com todos os blocos (onboarding/demonstração)
+  app.post("/projects/exemplo", async (_req, reply) => {
+    try {
+      const meta = await converter.createExemploProject();
+      return reply.status(201).send({ data: meta, error: null, meta: null });
+    } catch (err) {
+      return reply.status(500).send({
+        data: null,
+        error: { message: err instanceof Error ? err.message : "Erro ao criar o material de exemplo." },
         meta: null,
       });
     }
@@ -178,6 +238,7 @@ export async function convertRoutes(app: FastifyInstance) {
     if (!dir) return reply.status(404).send({ error: "Projeto não encontrado" });
     const buf = await fs.readFile(path.join(dir, "index.html"));
     reply.header("Content-Type", "text/html; charset=utf-8");
+    reply.header("Content-Security-Policy", previewFrameAncestors());
     return reply.send(buf);
   });
 
@@ -198,6 +259,19 @@ export async function convertRoutes(app: FastifyInstance) {
       });
     }
   });
+}
+
+/**
+ * Origens autorizadas a exibir o preview dentro de iframe.
+ * O padrão cobre o editor em desenvolvimento; `PREVIEW_FRAME_ANCESTORS`
+ * (separado por vírgulas) adiciona domínios publicados.
+ */
+function previewFrameAncestors(): string {
+  const extra = (process.env.PREVIEW_FRAME_ANCESTORS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return `frame-ancestors ${["'self'", "http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", ...extra].join(" ")}`;
 }
 
 function guessMime(p: string): string {

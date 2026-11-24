@@ -1,11 +1,15 @@
 import AdmZip from "adm-zip";
 import { XMLParser } from "fast-xml-parser";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { importIdml } from "./idml/importIdml.js";
+import { renderProjxBlock, PROJX_CSS, PROJX_JS } from "./blocks/projxBlocks.js";
+import { svgIcon, ICON_CSS } from "./blocks/icons.js";
+import { buildExemploDocument, exemploAssets } from "./blocks/exemploDocument.js";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
@@ -27,7 +31,24 @@ export type BlockType =
   | "callout"
   | "video"
   | "quiz"
-  | "external-embed";
+  | "external-embed"
+  | "flipcard"
+  | "timeline"
+  | "table"
+  | "cover"
+  | "parallax"
+  | "gallery"
+  | "image-text-card"
+  | "highlight"
+  | "code"
+  | "multiple-choice"
+  | "true-false"
+  | "fill-blanks"
+  | "ordering"
+  | "matching"
+  | "memory-game"
+  | "word-search"
+  | "crossword";
 
 /** Posição do bloco no original (pontos, relativo ao canto superior da página). */
 export interface BlockLayout {
@@ -58,6 +79,17 @@ export interface ParagraphBlock extends BaseBlock {
   };
 }
 
+export interface ImageHotspot {
+  id: string;
+  /** Posição/tamanho em % da imagem (0–100). */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title: string;
+  contentHtml: string;
+}
+
 export interface ImageBlock extends BaseBlock {
   type: "image";
   data: {
@@ -66,6 +98,11 @@ export interface ImageBlock extends BaseBlock {
     caption?: string;
     enableZoom?: boolean;
     linkUrl?: string;
+    /** Zonas de clique interativas: abrem modal com título + conteúdo. */
+    hotspots?: ImageHotspot[];
+    /** Referência do InDesign sem arquivo disponível (vinculável no editor). */
+    missing?: boolean;
+    fileName?: string;
   };
 }
 
@@ -96,7 +133,18 @@ export interface TabsBlock extends BaseBlock {
 export interface CalloutBlock extends BaseBlock {
   type: "callout";
   data: {
-    variant: "info" | "tip" | "warning" | "curiosity";
+    variant:
+      | "info"
+      | "tip"
+      | "warning"
+      | "curiosity"
+      | "saiba-mais"
+      | "importante"
+      | "voce-sabia"
+      | "dica"
+      | "box-pdf"
+      | "vamos-refletir"
+      | "box";
     title?: string;
     contentHtml: string;
   };
@@ -134,6 +182,113 @@ export interface ExternalEmbedBlock extends BaseBlock {
   };
 }
 
+export interface FlipcardBlock extends BaseBlock {
+  type: "flipcard";
+  data: { title?: string; frontHtml: string; backHtml: string; image?: string; hint?: string };
+}
+
+export interface TimelineBlock extends BaseBlock {
+  type: "timeline";
+  data: { title?: string; items: Array<{ id: string; title: string; contentHtml: string; icon?: string }> };
+}
+
+export interface TableBlock extends BaseBlock {
+  type: "table";
+  data: { caption?: string; headers: string[]; rows: string[][]; striped?: boolean };
+}
+
+export interface CoverBlock extends BaseBlock {
+  type: "cover";
+  data: {
+    title: string;
+    subtitle?: string;
+    image?: string;
+    ctaLabel?: string;
+    ctaHref?: string;
+    align?: "left" | "center";
+  };
+}
+
+export interface ParallaxBlock extends BaseBlock {
+  type: "parallax";
+  data: { image: string; title?: string; subtitle?: string; height?: number };
+}
+
+export interface GalleryBlock extends BaseBlock {
+  type: "gallery";
+  data: { items: Array<{ id: string; src: string; caption?: string }>; autoplay?: boolean };
+}
+
+export interface ImageTextCardBlock extends BaseBlock {
+  type: "image-text-card";
+  data: { image: string; title: string; html: string; layout?: "left" | "right" };
+}
+
+export interface HighlightBlock extends BaseBlock {
+  type: "highlight";
+  data: { title?: string; html: string; legend?: string };
+}
+
+export interface CodeBlock extends BaseBlock {
+  type: "code";
+  data: { code: string; language?: string; filename?: string };
+}
+
+export interface MultipleChoiceBlock extends BaseBlock {
+  type: "multiple-choice";
+  data: {
+    question: string;
+    options: Array<{ id: string; text: string }>;
+    correctIds: string[];
+    attempts?: number;
+    explanation?: string;
+  };
+}
+
+export interface TrueFalseBlock extends BaseBlock {
+  type: "true-false";
+  data: {
+    question?: string;
+    statements: Array<{ id: string; text: string; answer: boolean }>;
+    attempts?: number;
+    explanation?: string;
+  };
+}
+
+export interface FillBlanksBlock extends BaseBlock {
+  type: "fill-blanks";
+  data: {
+    question?: string;
+    sentences: Array<{ id: string; text: string; answers: string[] }>;
+    attempts?: number;
+  };
+}
+
+export interface OrderingBlock extends BaseBlock {
+  type: "ordering";
+  data: { question?: string; items: Array<{ id: string; text: string }>; attempts?: number };
+}
+
+export interface MatchingBlock extends BaseBlock {
+  type: "matching";
+  data: { question?: string; pairs: Array<{ id: string; left: string; right: string }>; attempts?: number };
+}
+
+export interface MemoryGameBlock extends BaseBlock {
+  type: "memory-game";
+  data: { title?: string; pairs: Array<{ id: string; a: string; b: string }>; columns?: number };
+}
+
+export interface WordSearchBlock extends BaseBlock {
+  type: "word-search";
+  data: { title?: string; words: string[]; size?: number };
+}
+
+export interface CrosswordBlock extends BaseBlock {
+  type: "crossword";
+  data: { title?: string; entries: Array<{ id: string; answer: string; clue: string }> };
+}
+
 export type Block =
   | HeadingBlock
   | ParagraphBlock
@@ -143,7 +298,24 @@ export type Block =
   | CalloutBlock
   | VideoBlock
   | QuizBlock
-  | ExternalEmbedBlock;
+  | ExternalEmbedBlock
+  | FlipcardBlock
+  | TimelineBlock
+  | TableBlock
+  | CoverBlock
+  | ParallaxBlock
+  | GalleryBlock
+  | ImageTextCardBlock
+  | HighlightBlock
+  | CodeBlock
+  | MultipleChoiceBlock
+  | TrueFalseBlock
+  | FillBlanksBlock
+  | OrderingBlock
+  | MatchingBlock
+  | MemoryGameBlock
+  | WordSearchBlock
+  | CrosswordBlock;
 
 export interface ProjectPage {
   id: string;
@@ -167,6 +339,8 @@ export interface ProjectDocument {
   };
   assets: ProjectAsset[];
   pages: ProjectPage[];
+  /** Idioma do conteúdo publicado (atributo `lang` do HTML). Padrão: pt-BR. */
+  locale?: string;
 }
 
 export interface ProjectMeta {
@@ -185,6 +359,24 @@ async function ensureDirs() {
 }
 
 export async function convertFile(filePath: string, originalName: string): Promise<ProjectMeta> {
+  const ext = path.extname(originalName).toLowerCase();
+
+  // Pacote editorial .zip: contém o .idml (ou .pdf) + pasta Links/ com as imagens.
+  // Extrai para um diretório temporário para que o resolvedor de mídias ache os Links/.
+  if (ext === ".zip") {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "interativo-pacote-"));
+    try {
+      new AdmZip(filePath).extractAllTo(tmpDir, true);
+      const inner = await findInnerSource(tmpDir);
+      if (!inner) {
+        throw new Error("O pacote .zip não contém nenhum arquivo .idml ou .pdf. Envie o IDML junto da pasta Links/ compactados.");
+      }
+      return await convertFile(inner, path.basename(inner));
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  }
+
   await ensureDirs();
   const id = randomUUID();
   const projectDir = path.join(PROJECTS_DIR, id);
@@ -192,7 +384,6 @@ export async function convertFile(filePath: string, originalName: string): Promi
   await fs.mkdir(projectDir, { recursive: true });
   await fs.mkdir(assetsDir, { recursive: true });
 
-  const ext = path.extname(originalName).toLowerCase();
   const title = path.basename(originalName, ext).replace(/[-_]/g, " ");
 
   let pages: ProjectPage[] = [];
@@ -211,7 +402,7 @@ export async function convertFile(filePath: string, originalName: string): Promi
       "Arquivos .indd não são suportados diretamente. No InDesign, clique em 'Arquivo > Exportar' e selecione 'InDesign Markup (IDML)' ou 'Adobe PDF' para importar no Interativo."
     );
   } else {
-    throw new Error("Formato não suportado: " + ext);
+    throw new Error("Formato não suportado: " + ext + " (use .pdf, .idml ou .zip com IDML + Links/)");
   }
 
   // Garantir pelo menos uma página se vazio
@@ -258,6 +449,25 @@ export async function convertFile(filePath: string, originalName: string): Promi
 // ============================================================================
 // EXTRATOR NATIVO DE PDF
 // ============================================================================
+
+/** Acha o arquivo-fonte (.idml preferencialmente) dentro de um pacote extraído. */
+async function findInnerSource(dir: string, depth = 0): Promise<string | null> {
+  if (depth > 4) return null;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files = entries.filter((e) => e.isFile() && !e.name.startsWith("."));
+  const idml = files.find((e) => /\.idml$/i.test(e.name));
+  if (idml) return path.join(dir, idml.name);
+  const pdf = files.find((e) => /\.pdf$/i.test(e.name));
+  if (pdf) return path.join(dir, pdf.name);
+  for (const e of entries) {
+    if (e.isDirectory() && !e.name.startsWith("__MACOSX") && !e.name.startsWith(".")) {
+      const found = await findInnerSource(path.join(dir, e.name), depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 async function extractPdfImages(filePath: string, assetsDir: string): Promise<ProjectAsset[]> {
   const buf = await fs.readFile(filePath);
   const content = buf.toString("latin1");
@@ -624,6 +834,25 @@ export async function saveProjectDocument(doc: ProjectDocument): Promise<void> {
   await fs.writeFile(path.join(projectDir, "script.js"), js, "utf8");
 }
 
+/**
+ * Cria o documento-modelo demonstrativo (todas as páginas/blocos + mídias SVG).
+ * Usado pelo botão "Criar material de exemplo" da tela de conversão.
+ */
+export async function createExemploProject(): Promise<ProjectMeta> {
+  const id = randomUUID();
+  const projectDir = path.join(PROJECTS_DIR, id);
+  const assetsDir = path.join(projectDir, "assets");
+  await fs.mkdir(assetsDir, { recursive: true });
+
+  for (const asset of exemploAssets()) {
+    await fs.writeFile(path.join(assetsDir, asset.fileName), asset.content, "utf8");
+  }
+
+  const doc = buildExemploDocument(id);
+  await saveProjectDocument(doc);
+  return getProjectMeta(doc);
+}
+
 export async function getProjectDocument(id: string): Promise<ProjectDocument> {
   const projectDir = path.join(PROJECTS_DIR, id);
   const raw = await fs.readFile(path.join(projectDir, "project.json"), "utf8");
@@ -718,7 +947,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
     .join("\n");
 
   return `<!DOCTYPE html>
-<html lang="pt-BR" data-theme="${doc.theme.mode || "light"}">
+<html lang="${escapeHtml(doc.locale || "pt-BR")}" data-theme="${doc.theme.mode || "light"}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -734,8 +963,8 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
         <h1 class="book-heading">${escapeHtml(doc.title)}</h1>
       </div>
       <div class="top-controls">
-        <button id="btn-theme-toggle" class="btn-ctrl" title="Alternar tema claro/escuro">🌓 Tema</button>
-        <button id="btn-print" class="btn-ctrl" title="Imprimir / Salvar PDF">🖨️ Imprimir</button>
+        <button id="btn-theme-toggle" class="btn-ctrl" title="Alternar tema claro/escuro">${svgIcon("theme")} Tema</button>
+        <button id="btn-print" class="btn-ctrl" title="Imprimir / Salvar PDF">${svgIcon("printer")} Imprimir</button>
       </div>
     </header>
 
@@ -767,6 +996,18 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
     </div>
   </div>
 
+  <!-- Modal das zonas de clique (imagem interativa) -->
+  <div id="hotspot-modal" class="modal-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="hotspot-modal-title">
+    <div class="modal-content">
+      <button class="modal-close" id="hotspot-close-btn" aria-label="Fechar">&times;</button>
+      <h3 id="hotspot-modal-title"></h3>
+      <div id="hotspot-modal-body" class="hotspot-body"></div>
+    </div>
+  </div>
+
+  <!-- Botão flutuante: voltar ao topo -->
+  <button id="btn-top" class="btn-top" type="button" aria-label="Voltar ao topo" hidden>↑</button>
+
   <script src="script.js"></script>
 </body>
 </html>`;
@@ -779,17 +1020,44 @@ function renderBlockHtml(block: Block): string {
       return `<${tag} class="block-heading block-heading-${block.data.level}">${escapeHtml(block.data.text)}</${tag}>`;
     }
     case "paragraph": {
-      return `<div class="block-paragraph"><p>${block.data.html}</p></div>`;
+      const html = block.data.html || "";
+      // Listas e outros blocos não podem viver dentro de <p> (o navegador quebra o HTML).
+      if (/^\s*<(ul|ol|div|table|blockquote)[\s>]/i.test(html)) {
+        return `<div class="block-paragraph">${html}</div>`;
+      }
+      return `<div class="block-paragraph"><p>${html}</p></div>`;
     }
     case "image": {
+      // Referência do InDesign sem arquivo: placeholder vinculável no editor.
+      if (block.data.missing || !block.data.src) {
+        return `
+          <figure class="block-image block-image-missing">
+            <div class="img-placeholder" role="img" aria-label="${escapeHtml(block.data.alt || block.data.fileName || "Imagem pendente")}">
+              <span class="img-placeholder-icon" aria-hidden="true">${svgIcon("image")}</span>
+              <strong>${escapeHtml(block.data.fileName || block.data.alt || "Imagem")}</strong>
+              <span>Recurso do InDesign · vincule o arquivo no editor</span>
+            </div>
+            ${block.data.caption ? `<figcaption>${escapeHtml(block.data.caption)}</figcaption>` : ""}
+          </figure>`;
+      }
       const zoomClass = block.data.enableZoom ? "can-zoom" : "";
       const imgTag = `<img src="${block.data.src}" alt="${escapeHtml(block.data.alt || "")}" class="${zoomClass}" data-caption="${escapeHtml(block.data.caption || "")}" loading="lazy"/>`;
       const linkedImg = block.data.linkUrl
-        ? `<a href="${escapeHtml(block.data.linkUrl)}" target="_blank" rel="noopener noreferrer" class="img-link">${imgTag}<span class="link-hint">🔗 Abrir link externo</span></a>`
+        ? `<a href="${escapeHtml(block.data.linkUrl)}" target="_blank" rel="noopener noreferrer" class="img-link">${imgTag}<span class="link-hint">${svgIcon("link")} Abrir link externo</span></a>`
         : imgTag;
+      // Zonas de clique: botões posicionados em % sobre a imagem; abrem modal.
+      const hotspots = block.data.hotspots || [];
+      const hotspotHtml = hotspots.length
+        ? `<div class="hotspot-layer">${hotspots
+            .map(
+              (h) =>
+                `<button type="button" class="hotspot" style="left:${h.x}%;top:${h.y}%;width:${h.w}%;height:${h.h}%" data-hotspot-title="${escapeHtml(h.title)}" data-hotspot-content="${escapeHtml(h.contentHtml)}" aria-label="${escapeHtml(h.title || "Zona interativa")}"><span class="hotspot-dot" aria-hidden="true">+</span></button>`
+            )
+            .join("")}</div>`
+        : "";
       return `
         <figure class="block-image">
-          ${linkedImg}
+          <div class="hotspot-wrap">${linkedImg}${hotspotHtml}</div>
           ${block.data.caption ? `<figcaption>${escapeHtml(block.data.caption)}</figcaption>` : ""}
         </figure>`;
     }
@@ -834,20 +1102,30 @@ function renderBlockHtml(block: Block): string {
         </div>`;
     }
     case "callout": {
-      const variantIcons: Record<string, string> = {
-        info: "ℹ️",
-        tip: "💡",
-        warning: "⚠️",
-        curiosity: "🔍",
+      // Boxes no padrão ProjetoX (SENAI): Importante, Saiba Mais, Dica,
+      // Você Sabia, PDF, Vamos Refletir + variantes legadas.
+      const BOXES: Record<string, { title: string; icon: string }> = {
+        importante: { title: "IMPORTANTE!", icon: svgIcon("alert") },
+        "saiba-mais": { title: "SAIBA MAIS...", icon: svgIcon("search") },
+        dica: { title: "DICA!", icon: svgIcon("bulb") },
+        "voce-sabia": { title: "VOCÊ SABIA?", icon: svgIcon("help") },
+        "box-pdf": { title: "PDF", icon: svgIcon("file") },
+        "vamos-refletir": { title: "VAMOS REFLETIR", icon: svgIcon("message") },
+        box: { title: "", icon: "" },
+        info: { title: "Informação", icon: svgIcon("info") },
+        tip: { title: "Dica", icon: svgIcon("bulb") },
+        warning: { title: "Atenção", icon: svgIcon("alert") },
+        curiosity: { title: "Curiosidade", icon: svgIcon("search") },
       };
-      const icon = variantIcons[block.data.variant] || "📌";
+      const preset = BOXES[block.data.variant] || BOXES.info;
+      const title = block.data.title ?? preset.title;
       return `
-        <aside class="block-callout callout-${block.data.variant || "info"}">
-          <div class="callout-header">
-            <span class="callout-icon">${icon}</span>
-            <strong class="callout-title">${escapeHtml(block.data.title || "Destaque")}</strong>
+        <aside class="pbox pbox-${block.data.variant || "info"}" role="note"${title ? ` aria-label="${escapeHtml(title)}"` : ""}>
+          <div class="pbox-body">
+            ${title ? `<h3 class="pbox-title">${escapeHtml(title)}</h3>` : ""}
+            <div class="pbox-content">${block.data.contentHtml}</div>
           </div>
-          <div class="callout-content">${block.data.contentHtml}</div>
+          ${preset.icon ? `<div class="pbox-icon" aria-hidden="true">${preset.icon}</div>` : ""}
         </aside>`;
     }
     case "video": {
@@ -890,7 +1168,7 @@ function renderBlockHtml(block: Block): string {
         </div>`;
     }
     default:
-      return "";
+      return renderProjxBlock(block) || "";
   }
 }
 
@@ -1053,7 +1331,12 @@ body {
 .block-heading-1 { font-size: 1.85rem; font-weight: 800; color: var(--brand-red); margin-top: 12px; }
 .block-heading-2 { font-size: 1.45rem; font-weight: 700; color: var(--text-main); margin-top: 8px; border-left: 4px solid var(--brand-red); padding-left: 12px; }
 .block-heading-3 { font-size: 1.2rem; font-weight: 600; color: var(--text-main); }
-.block-paragraph p { font-size: 1.05rem; line-height: 1.75; color: var(--text-main); }
+.block-paragraph { overflow-wrap: anywhere; word-break: normal; }
+.block-paragraph p { font-size: 1.05rem; line-height: 1.65; color: var(--text-main); overflow-wrap: anywhere; }
+.block-paragraph ul, .block-paragraph ol { font-size: 1.05rem; line-height: 1.65; color: var(--text-main); padding-left: 1.4em; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.block-paragraph ul { list-style: disc; }
+.block-paragraph ol { list-style: decimal; }
+.block-paragraph li { overflow-wrap: anywhere; }
 
 /* Imagens */
 .block-image { text-align: center; margin: 12px 0; }
@@ -1133,6 +1416,89 @@ body {
 .callout-tip { background: #f0fdf4; border-color: #22c55e; color: #14532d; }
 .callout-warning { background: #fefce8; border-color: #eab308; color: #713f12; }
 .callout-curiosity { background: #faf5ff; border-color: #a855f7; color: #581c87; }
+
+/* Boxes padrão ProjetoX (SENAI) */
+.pbox {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 20px 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  border-left: 6px solid;
+  margin: 20px 0;
+}
+.pbox-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .02em; }
+.pbox-content { font-size: 1.02rem; line-height: 1.65; overflow-wrap: anywhere; }
+.pbox-content p { margin: 6px 0; }
+.pbox-icon { font-size: 2.6rem; line-height: 1; padding: 0 8px; color: var(--brand-red); display: flex; align-items: flex-start; }
+${ICON_CSS}
+.pbox-importante { background: #fef2f2; border-left-color: #ef4444; }
+.pbox-importante .pbox-title { color: #b91c1c; }
+.pbox-saiba-mais { background: #f0fdf4; border-left-color: #22c55e; }
+.pbox-saiba-mais .pbox-title { color: #15803d; }
+.pbox-dica { background: #fff7ed; border-left-color: #f97316; }
+.pbox-dica .pbox-title { color: #c2410c; }
+.pbox-voce-sabia { background: #faf5ff; border-left-color: #a855f7; }
+.pbox-voce-sabia .pbox-title { color: #7e22ce; }
+.pbox-box-pdf { background: #f8fafc; border-left-color: #475569; }
+.pbox-box-pdf .pbox-title { color: #334155; }
+.pbox-vamos-refletir { background: #ecfeff; border-left-color: #06b6d4; }
+.pbox-vamos-refletir .pbox-title { color: #0e7490; }
+.pbox-box { background: var(--surface-2, #f8fafc); border-left-color: var(--brand-red, #d42731); }
+.pbox-info { background: #eff6ff; border-left-color: #3b82f6; }
+.pbox-tip { background: #f0fdf4; border-left-color: #22c55e; }
+.pbox-warning { background: #fefce8; border-left-color: #eab308; }
+.pbox-curiosity { background: #faf5ff; border-left-color: #a855f7; }
+[data-theme="dark"] .pbox { background: rgba(255,255,255,.05); }
+[data-theme="dark"] .pbox-title { color: inherit; filter: brightness(1.5); }
+@media (max-width: 640px) { .pbox { grid-template-columns: 1fr; } .pbox-icon { display: none; } }
+
+/* Imagem interativa com zonas de clique */
+.hotspot-wrap { position: relative; display: inline-block; max-width: 100%; }
+.hotspot-wrap img { display: block; max-width: 100%; height: auto; }
+.hotspot-layer { position: absolute; inset: 0; }
+.hotspot {
+  position: absolute;
+  border: 2px dashed rgba(212, 39, 49, .85);
+  background: rgba(212, 39, 49, .14);
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background .15s;
+}
+.hotspot:hover, .hotspot:focus-visible { background: rgba(212, 39, 49, .32); outline: 3px solid var(--brand-red, #d42731); }
+.hotspot-dot {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--brand-red, #d42731);
+  color: #fff;
+  font-weight: 800;
+  display: grid; place-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  animation: hotspot-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hotspot-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .hotspot-dot { animation: none; } }
+#hotspot-modal .modal-content { background: var(--surface-1, #fff); color: var(--text-main, #1e293b); padding: 28px; border-radius: 14px; max-width: 560px; width: calc(100vw - 48px); max-height: 80vh; overflow: auto; text-align: left; }
+#hotspot-modal h3 { margin-bottom: 10px; font-size: 1.2rem; }
+#hotspot-modal .hotspot-body { line-height: 1.65; overflow-wrap: anywhere; }
+
+/* Placeholder de imagem vinculada (arquivo ausente) */
+.block-image-missing .img-placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 28px 20px;
+  border: 2px dashed var(--border-color, #cbd5e1);
+  border-radius: var(--radius-md);
+  color: var(--text-muted, #64748b);
+  font-size: .85rem;
+  background: var(--surface-2, #f8fafc);
+}
+.img-placeholder-icon { font-size: 2rem; }
+.img-placeholder strong { color: var(--text-main, #1e293b); font-size: .95rem; }
 
 /* Quiz Interativo */
 .block-quiz {
@@ -1241,12 +1607,13 @@ body {
   .book-page { padding: 20px 16px; }
   .book-heading { font-size: 1.05rem; }
 }
+${PROJX_CSS}
 `;
 }
 
 function buildJsFromDoc(): string {
   return `// Script Interativo Vanilla JS (Sem dependências, offline-ready)
-document.addEventListener("DOMContentLoaded", () => {
+function initBook() {
   // 1. Accordion
   document.querySelectorAll(".acc-header").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1281,11 +1648,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const isCorrect = btn.getAttribute("data-correct") === "true";
         if (isCorrect) {
           btn.classList.add("selected-correct");
-          feedback.textContent = "✅ Parabéns, resposta correta!";
+          feedback.textContent = "Parabéns, resposta correta!";
           feedback.style.color = "#15803d";
         } else {
           btn.classList.add("selected-wrong");
-          feedback.textContent = "❌ Resposta incorreta. Tente novamente!";
+          feedback.textContent = "Resposta incorreta. Tente novamente!";
           feedback.style.color = "#b91c1c";
         }
         if (explanation) explanation.classList.remove("hidden");
@@ -1316,6 +1683,36 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // 4b. Zonas de clique em imagens interativas (abre modal com conteúdo)
+  const hModal = document.getElementById("hotspot-modal");
+  const hTitle = document.getElementById("hotspot-modal-title");
+  const hBody = document.getElementById("hotspot-modal-body");
+  const hClose = document.getElementById("hotspot-close-btn");
+  let lastHotspot = null;
+  document.querySelectorAll(".hotspot").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!hModal) return;
+      lastHotspot = btn;
+      if (hTitle) hTitle.textContent = btn.getAttribute("data-hotspot-title") || "Detalhe";
+      if (hBody) hBody.innerHTML = btn.getAttribute("data-hotspot-content") || "";
+      hModal.classList.add("active");
+      hModal.setAttribute("aria-hidden", "false");
+      if (hClose) hClose.focus();
+    });
+  });
+  function fecharHotspot() {
+    if (!hModal) return;
+    hModal.classList.remove("active");
+    hModal.setAttribute("aria-hidden", "true");
+    if (lastHotspot) lastHotspot.focus();
+  }
+  if (hClose) hClose.addEventListener("click", fecharHotspot);
+  if (hModal) hModal.addEventListener("click", (e) => { if (e.target === hModal) fecharHotspot(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && hModal && hModal.classList.contains("active")) fecharHotspot();
+  });
+
   // 5. Alternar Tema Claro/Escuro
   const themeBtn = document.getElementById("btn-theme-toggle");
   if (themeBtn) {
@@ -1331,6 +1728,22 @@ document.addEventListener("DOMContentLoaded", () => {
   if (printBtn) {
     printBtn.addEventListener("click", () => window.print());
   }
-});
+
+  // 7. Voltar ao topo
+  const topBtn = document.getElementById("btn-top");
+  if (topBtn) {
+    const updateTop = () => { topBtn.hidden = window.scrollY < 400; };
+    window.addEventListener("scroll", updateTop, { passive: true });
+    updateTop();
+    topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initBook);
+} else {
+  initBook();
+}
+${PROJX_JS}
 `;
 }

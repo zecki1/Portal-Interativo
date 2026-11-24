@@ -25,6 +25,10 @@ export async function buildApp() {
   await app.register(helmet, {
     crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: false,
+    // O preview do projeto é exibido dentro de um iframe no frontend (:5173),
+    // que é outra origem. O bloqueio por iframe é feito rota a rota com
+    // `Content-Security-Policy: frame-ancestors` na rota de preview.
+    frameguard: false,
   });
   app.setErrorHandler(errorHandler);
   await registerSwagger(app);
