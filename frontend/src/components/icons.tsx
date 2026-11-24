@@ -189,6 +189,24 @@ export const IconChevronRight = (p: Props) => (
   </Base>
 );
 
+export const IconChevronLeft = (p: Props) => (
+  <Base {...p}>
+    <path d="m15 19-7-7 7-7" />
+  </Base>
+);
+
+export const IconChevronDown = (p: Props) => (
+  <Base {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Base>
+);
+
+export const IconChevronUp = (p: Props) => (
+  <Base {...p}>
+    <path d="m18 15-6-6-6 6" />
+  </Base>
+);
+
 export const IconCopy = (p: Props) => (
   <Base {...p}>
     <rect x="8" y="8" width="12" height="12" rx="2" />
@@ -199,5 +217,100 @@ export const IconCopy = (p: Props) => (
 export const IconPlus = (p: Props) => (
   <Base {...p}>
     <path d="M12 5v14M5 12h14" />
+  </Base>
+);
+
+export const IconTrash = (p: Props) => (
+  <Base {...p}>
+    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+  </Base>
+);
+
+export const IconArrowUp = (p: Props) => (
+  <Base {...p}>
+    <path d="M12 19V5M5 12l7-7 7 7" />
+  </Base>
+);
+
+export const IconArrowDown = (p: Props) => (
+  <Base {...p}>
+    <path d="M12 5v14M19 12l-7 7-7-7" />
+  </Base>
+);
+
+export const IconLayers = (p: Props) => (
+  <Base {...p}>
+    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+    <polyline points="2 17 12 22 22 17" />
+    <polyline points="2 12 12 17 22 12" />
+  </Base>
+);
+
+export const IconType = (p: Props) => (
+  <Base {...p}>
+    <polyline points="4 7 4 4 20 4 20 7" />
+    <line x1="9" y1="20" x2="15" y2="20" />
+    <line x1="12" y1="4" x2="12" y2="20" />
+  </Base>
+);
+
+export const IconHelpCircle = (p: Props) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </Base>
+);
+
+export const IconPlay = (p: Props) => (
+  <Base {...p}>
+    <polygon points="5 3 19 12 5 21 5 3" />
+  </Base>
+);
+
+export const IconSliders = (p: Props) => (
+  <Base {...p}>
+    <line x1="4" y1="21" x2="4" y2="14" />
+    <line x1="4" y1="10" x2="4" y2="3" />
+    <line x1="12" y1="21" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12" y2="3" />
+    <line x1="20" y1="21" x2="20" y2="16" />
+    <line x1="20" y1="12" x2="20" y2="3" />
+    <line x1="1" y1="14" x2="7" y2="14" />
+    <line x1="9" y1="8" x2="15" y2="8" />
+    <line x1="17" y1="16" x2="23" y2="16" />
+  </Base>
+);
+
+export const IconMonitor = (p: Props) => (
+  <Base {...p}>
+    <rect x="2" y="3" width="20" height="14" rx="2" />
+    <line x1="8" y1="21" x2="16" y2="21" />
+    <line x1="12" y1="17" x2="12" y2="21" />
+  </Base>
+);
+
+export const IconTablet = (p: Props) => (
+  <Base {...p}>
+    <rect x="4" y="2" width="16" height="20" rx="2" />
+    <line x1="12" y1="18" x2="12.01" y2="18" />
+  </Base>
+);
+
+export const IconSmartphone = (p: Props) => (
+  <Base {...p}>
+    <rect x="5" y="2" width="14" height="20" rx="2" />
+    <line x1="12" y1="18" x2="12.01" y2="18" />
+  </Base>
+);
+
+export const IconGripVertical = (p: Props) => (
+  <Base {...p}>
+    <circle cx="9" cy="12" r="1" />
+    <circle cx="9" cy="5" r="1" />
+    <circle cx="9" cy="19" r="1" />
+    <circle cx="15" cy="12" r="1" />
+    <circle cx="15" cy="5" r="1" />
+    <circle cx="15" cy="19" r="1" />
   </Base>
 );

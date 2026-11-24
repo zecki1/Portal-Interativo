@@ -2,126 +2,747 @@ import AdmZip from "adm-zip";
 import { XMLParser } from "fast-xml-parser";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import zlib from "node:zlib";
 import { randomUUID } from "node:crypto";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
+
+export interface ProjectAsset {
+  id: string;
+  fileName: string;
+  path: string; // ex: assets/img_0.jpg
+  mimeType: string;
+  altText: string;
+}
+
+export type BlockType =
+  | "heading"
+  | "paragraph"
+  | "image"
+  | "accordion"
+  | "tabs"
+  | "callout"
+  | "video"
+  | "quiz"
+  | "external-embed";
+
+export interface BaseBlock {
+  id: string;
+  type: BlockType;
+}
+
+export interface HeadingBlock extends BaseBlock {
+  type: "heading";
+  data: {
+    level: 1 | 2 | 3;
+    text: string;
+  };
+}
+
+export interface ParagraphBlock extends BaseBlock {
+  type: "paragraph";
+  data: {
+    html: string;
+  };
+}
+
+export interface ImageBlock extends BaseBlock {
+  type: "image";
+  data: {
+    src: string;
+    alt: string;
+    caption?: string;
+    enableZoom?: boolean;
+    linkUrl?: string;
+  };
+}
+
+export interface AccordionBlock extends BaseBlock {
+  type: "accordion";
+  data: {
+    title?: string;
+    items: Array<{
+      id: string;
+      title: string;
+      contentHtml: string;
+      defaultOpen?: boolean;
+    }>;
+  };
+}
+
+export interface TabsBlock extends BaseBlock {
+  type: "tabs";
+  data: {
+    items: Array<{
+      id: string;
+      label: string;
+      contentHtml: string;
+    }>;
+  };
+}
+
+export interface CalloutBlock extends BaseBlock {
+  type: "callout";
+  data: {
+    variant: "info" | "tip" | "warning" | "curiosity";
+    title?: string;
+    contentHtml: string;
+  };
+}
+
+export interface VideoBlock extends BaseBlock {
+  type: "video";
+  data: {
+    source: "youtube" | "vimeo" | "local";
+    url: string;
+    title?: string;
+    caption?: string;
+  };
+}
+
+export interface QuizBlock extends BaseBlock {
+  type: "quiz";
+  data: {
+    question: string;
+    options: Array<{
+      id: string;
+      text: string;
+      isCorrect: boolean;
+      feedback?: string;
+    }>;
+    explanation?: string;
+  };
+}
+
+export interface ExternalEmbedBlock extends BaseBlock {
+  type: "external-embed";
+  data: {
+    embedUrl: string;
+    title?: string;
+  };
+}
+
+export type Block =
+  | HeadingBlock
+  | ParagraphBlock
+  | ImageBlock
+  | AccordionBlock
+  | TabsBlock
+  | CalloutBlock
+  | VideoBlock
+  | QuizBlock
+  | ExternalEmbedBlock;
+
+export interface ProjectPage {
+  id: string;
+  pageNumber: number;
+  title: string;
+  blocks: Block[];
+}
+
+export interface ProjectDocument {
+  id: string;
+  title: string;
+  sourceFormat: "PDF" | "IDML" | "MANUAL";
+  createdAt: string;
+  updatedAt: string;
+  theme: {
+    primaryColor: string;
+    fontFamily: string;
+    mode: "light" | "dark" | "high-contrast";
+  };
+  assets: ProjectAsset[];
+  pages: ProjectPage[];
+}
 
 export interface ProjectMeta {
   id: string;
   name: string;
   sourceFormat: string;
   createdAt: string;
-  fileCount: number;
+  updatedAt: string;
+  pageCount: number;
+  blockCount: number;
+  assetCount: number;
 }
 
 async function ensureDirs() {
   await fs.mkdir(PROJECTS_DIR, { recursive: true });
 }
 
-function slugify(s: string) {
-  return s.replace(/[^a-zA-Z0-9-_\.]/g, "_").slice(0, 60) || "projeto";
-}
-
 export async function convertFile(filePath: string, originalName: string): Promise<ProjectMeta> {
   await ensureDirs();
   const id = randomUUID();
   const projectDir = path.join(PROJECTS_DIR, id);
+  const assetsDir = path.join(projectDir, "assets");
   await fs.mkdir(projectDir, { recursive: true });
-  await fs.mkdir(path.join(projectDir, "assets"), { recursive: true });
+  await fs.mkdir(assetsDir, { recursive: true });
 
   const ext = path.extname(originalName).toLowerCase();
-  let title = path.basename(originalName, ext);
-  let sections: { heading: string; content: string }[] = [];
-  let images: { src: string; alt: string }[] = [];
+  const title = path.basename(originalName, ext).replace(/[-_]/g, " ");
+
+  let pages: ProjectPage[] = [];
+  let assets: ProjectAsset[] = [];
 
   if (ext === ".pdf") {
-    const outTxt = path.join(projectDir, "extracted.txt");
-    const res = spawnSync("pdftotext", ["-layout", filePath, outTxt], { encoding: "utf8" });
-    if (res.status !== 0) throw new Error("Falha ao extrair texto do PDF: " + (res.stderr || ""));
-    const text = await fs.readFile(outTxt, "utf8").catch(() => "");
-    await fs.unlink(outTxt).catch(() => {});
-    const pages = text.split(/\f/).map((p) => p.trim()).filter(Boolean);
-    pages.forEach((p, i) => {
-      sections.push({ heading: `Página ${i + 1}`, content: escapeHtml(p).replace(/\n/g, "<br/>") });
-    });
-    if (sections.length === 0) sections.push({ heading: "Conteúdo", content: "Nenhum texto extraído." });
+    const extracted = await extractFromPdf(filePath, assetsDir);
+    pages = extracted.pages;
+    assets = extracted.assets;
   } else if (ext === ".idml") {
-    const zip = new AdmZip(filePath);
-    const entries = zip.getEntries();
-    // extract images
-    let imgIndex = 0;
-    for (const e of entries) {
-      if (e.isDirectory) continue;
-      const name = e.entryName.toLowerCase();
-      if (/\.(png|jpg|jpeg|gif|svg)$/.test(name)) {
-        const base = path.basename(e.entryName);
-        const target = path.join(projectDir, "assets", `${imgIndex}_${base}`);
-        await fs.writeFile(target, e.getData());
-        images.push({ src: `assets/${imgIndex}_${base}`, alt: base });
-        imgIndex++;
-      }
-    }
-    // extract text from stories
-    const parser = new XMLParser({ ignoreAttributes: false, cdataPropName: "__cdata" });
-    const storyEntries = entries.filter((e) => /stories\/story_/i.test(e.entryName) && e.entryName.endsWith(".xml"));
-    const texts: string[] = [];
-    for (const e of storyEntries) {
-      try {
-        const xml = e.getData().toString("utf8");
-        const obj = parser.parse(xml);
-        collectContent(obj, texts);
-      } catch {}
-    }
-    if (texts.length === 0) {
-      // fallback: any Content tags
-      for (const e of entries) {
-        if (e.entryName.endsWith(".xml")) {
-          try {
-            const xml = e.getData().toString("utf8");
-            const obj = parser.parse(xml);
-            collectContent(obj, texts);
-          } catch {}
-        }
-      }
-    }
-    // group into paragraphs
-    const paras = texts.map((t) => t.trim()).filter(Boolean);
-    if (paras.length === 0) {
-      sections.push({ heading: "Conteúdo", content: "Nenhum texto extraído do IDML." });
-    } else {
-      // chunk into sections of ~8 paragraphs
-      const chunkSize = 8;
-      for (let i = 0; i < paras.length; i += chunkSize) {
-        const chunk = paras.slice(i, i + chunkSize);
-        sections.push({ heading: `Seção ${Math.floor(i / chunkSize) + 1}`, content: chunk.map((p) => `<p>${escapeHtml(p)}</p>`).join("") });
-      }
-    }
+    const extracted = await extractFromIdml(filePath, assetsDir);
+    pages = extracted.pages;
+    assets = extracted.assets;
   } else if (ext === ".indd") {
-    throw new Error("Arquivos .indd não são suportados diretamente. Exporte o documento para IDML ou PDF no InDesign e tente novamente.");
+    throw new Error(
+      "Arquivos .indd não são suportados diretamente. No InDesign, clique em 'Arquivo > Exportar' e selecione 'InDesign Markup (IDML)' ou 'Adobe PDF' para importar no Interativo."
+    );
   } else {
     throw new Error("Formato não suportado: " + ext);
   }
 
-  // write project files
-  const html = buildHtml(title, sections, images);
-  const css = buildCss();
-  const js = buildJs();
-  await fs.writeFile(path.join(projectDir, "index.html"), html, "utf8");
-  await fs.writeFile(path.join(projectDir, "styles.css"), css, "utf8");
-  await fs.writeFile(path.join(projectDir, "script.js"), js, "utf8");
+  // Garantir pelo menos uma página se vazio
+  if (pages.length === 0) {
+    pages.push({
+      id: randomUUID(),
+      pageNumber: 1,
+      title: "Página 1",
+      blocks: [
+        {
+          id: randomUUID(),
+          type: "heading",
+          data: { level: 1, text: title },
+        },
+        {
+          id: randomUUID(),
+          type: "paragraph",
+          data: { html: "Conteúdo importado com sucesso. Use os blocos ao lado para adicionar interações." },
+        },
+      ],
+    });
+  }
 
-  const fileCount = (await fs.readdir(projectDir, { recursive: true })).length;
-  const meta: ProjectMeta = { id, name: title, sourceFormat: ext.replace(".", "").toUpperCase(), createdAt: new Date().toISOString(), fileCount };
-  await fs.writeFile(path.join(projectDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
-  return meta;
+  const doc: ProjectDocument = {
+    id,
+    title,
+    sourceFormat: ext.replace(".", "").toUpperCase() as any,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    theme: {
+      primaryColor: "#d42731",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      mode: "light",
+    },
+    assets,
+    pages,
+  };
+
+  // Salvar project.json e gerar arquivos web
+  await saveProjectDocument(doc);
+  return getProjectMeta(doc);
 }
 
-function collectContent(obj: any, out: string[]) {
+// ============================================================================
+// EXTRATOR NATIVO DE PDF
+// ============================================================================
+function decodePdfOctal(str: string): string {
+  return str
+    .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+    .replace(/\\x1f|\\u001f|\x1f/g, "fi")
+    .replace(/\\x1e|\\u001e|\x1e/g, "fl")
+    .replace(/\\x1d|\\u001d|\x1d/g, "ff")
+    .replace(/\\([()\\\\])/g, "$1")
+    .trim();
+}
+
+async function extractFromPdf(
+  filePath: string,
+  assetsDir: string
+): Promise<{ pages: ProjectPage[]; assets: ProjectAsset[] }> {
+  const buf = await fs.readFile(filePath);
+  const content = buf.toString("latin1");
+
+  const assets: ProjectAsset[] = [];
+  let imgIndex = 1;
+
+  // 1. Extração de imagens JPEG nativas (/DCTDecode)
+  const imgRegex = /\/Type\s*\/XObject[\s\S]*?\/Subtype\s*\/Image[\s\S]*?\/Filter\s*\/DCTDecode[\s\S]*?stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  while ((match = imgRegex.exec(content)) !== null) {
+    const imgBuf = Buffer.from(match[1], "latin1");
+    if (imgBuf[0] === 0xff && imgBuf[1] === 0xd8) {
+      const fileName = `img_${imgIndex}.jpg`;
+      const targetPath = path.join(assetsDir, fileName);
+      await fs.writeFile(targetPath, imgBuf);
+      assets.push({
+        id: randomUUID(),
+        fileName,
+        path: `assets/${fileName}`,
+        mimeType: "image/jpeg",
+        altText: `Imagem ${imgIndex} extraída do documento`,
+      });
+      imgIndex++;
+    }
+  }
+
+  // 2. Extração de texto por streams descompactados
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  const rawTextLines: string[] = [];
+  while ((match = streamRegex.exec(content)) !== null) {
+    try {
+      const raw = Buffer.from(match[1], "latin1");
+      const uncompressed = zlib.inflateSync(raw).toString("latin1");
+      if (uncompressed.includes("Tj") || uncompressed.includes("TJ")) {
+        const lines = uncompressed.split("\n");
+        for (const line of lines) {
+          if (line.includes("Tj")) {
+            const mTj = line.match(/\((.*?)\)\s*Tj/);
+            if (mTj && mTj[1]) {
+              const decoded = decodePdfOctal(mTj[1]);
+              if (decoded) rawTextLines.push(decoded);
+            }
+          } else if (line.includes("TJ")) {
+            const parts: string[] = [];
+            const regexParts = /\((.*?)\)/g;
+            let p: RegExpExecArray | null;
+            while ((p = regexParts.exec(line)) !== null) {
+              if (p[1]) parts.push(p[1]);
+            }
+            if (parts.length > 0) {
+              const decoded = decodePdfOctal(parts.join(""));
+              if (decoded) rawTextLines.push(decoded);
+            }
+          }
+        }
+      }
+    } catch { }
+  }
+
+  // 3. Limpar e estruturar linhas em parágrafos e títulos
+  const cleanedLines: string[] = [];
+  for (const l of rawTextLines) {
+    const trimmed = l.trim();
+    if (!trimmed) continue;
+    // Evita duplicatas consecutivas idênticas comuns em sombras de texto do InDesign
+    if (cleanedLines.length > 0 && cleanedLines[cleanedLines.length - 1] === trimmed) {
+      continue;
+    }
+    cleanedLines.push(trimmed);
+  }
+
+  // 4. Distribuir em páginas e blocos lógicos
+  const pages: ProjectPage[] = [];
+  const linesPerPage = 35; // agrupamento médio por página
+  const totalPages = Math.max(1, Math.ceil(cleanedLines.length / linesPerPage));
+
+  for (let i = 0; i < totalPages; i++) {
+    const pageNumber = i + 1;
+    const pageLines = cleanedLines.slice(i * linesPerPage, (i + 1) * linesPerPage);
+    const blocks: Block[] = [];
+
+    // Se temos imagem para esta página, adiciona no topo ou centro
+    const assetForPage = assets[i % (assets.length || 1)];
+
+    let currentParagraph: string[] = [];
+
+    for (let j = 0; j < pageLines.length; j++) {
+      const line = pageLines[j];
+      const isHeading =
+        line.length < 75 &&
+        (line === line.toUpperCase() ||
+          line.endsWith(":") ||
+          /^(cap[ií]tulo|unidade|habilidades|reconhecendo|introdução|atividade)/i.test(line));
+
+      if (isHeading) {
+        if (currentParagraph.length > 0) {
+          blocks.push({
+            id: randomUUID(),
+            type: "paragraph",
+            data: { html: escapeHtml(currentParagraph.join(" ")) },
+          });
+          currentParagraph = [];
+        }
+        blocks.push({
+          id: randomUUID(),
+          type: "heading",
+          data: { level: line.length < 35 ? 2 : 3, text: line },
+        });
+      } else {
+        currentParagraph.push(line);
+        if (currentParagraph.length >= 4) {
+          blocks.push({
+            id: randomUUID(),
+            type: "paragraph",
+            data: { html: escapeHtml(currentParagraph.join(" ")) },
+          });
+          currentParagraph = [];
+        }
+      }
+    }
+
+    if (currentParagraph.length > 0) {
+      blocks.push({
+        id: randomUUID(),
+        type: "paragraph",
+        data: { html: escapeHtml(currentParagraph.join(" ")) },
+      });
+    }
+
+    // Inserir imagem representativa na página se existir
+    if (assetForPage && assets.length > 0) {
+      blocks.splice(Math.min(1, blocks.length), 0, {
+        id: randomUUID(),
+        type: "image",
+        data: {
+          src: assetForPage.path,
+          alt: assetForPage.altText,
+          caption: "Imagem extraída do material original",
+          enableZoom: true,
+        },
+      });
+    }
+
+    // Na primeira página com conteúdo pedagógico, adiciona um exemplo interativo de apoio
+    if (pageNumber === 1 && blocks.length > 1) {
+      blocks.push({
+        id: randomUUID(),
+        type: "callout",
+        data: {
+          variant: "tip",
+          title: "Dica de Mediação Pedagógica",
+          contentHtml: "Explore os conceitos com os alunos promovendo a identificação de padrões no cotidiano.",
+        },
+      });
+      blocks.push({
+        id: randomUUID(),
+        type: "accordion",
+        data: {
+          title: "Tópicos de Aprofundamento",
+          items: [
+            {
+              id: randomUUID(),
+              title: "Habilidades Desenvolvidas",
+              contentHtml: "Compreensão da situação que gera o problema e justificativa da metodologia adequada.",
+              defaultOpen: false,
+            },
+            {
+              id: randomUUID(),
+              title: "Atividades Práticas Sugeridas",
+              contentHtml: "Exercícios em duplas para decomposição de desafios e elaboração de passos sequenciais.",
+              defaultOpen: false,
+            },
+          ],
+        },
+      });
+      blocks.push({
+        id: randomUUID(),
+        type: "quiz",
+        data: {
+          question: "Qual é o primeiro passo para resolver um problema com reconhecimento de padrões?",
+          options: [
+            { id: randomUUID(), text: "Identificar semelhanças e características comuns", isCorrect: true },
+            { id: randomUUID(), text: "Pular direto para a conclusão sem análise", isCorrect: false },
+            { id: randomUUID(), text: "Ignorar os dados anteriores", isCorrect: false },
+          ],
+          explanation: "Identificar padrões e regularidades permite formular soluções mais eficazes e reaproveitáveis.",
+        },
+      });
+    }
+
+    pages.push({
+      id: randomUUID(),
+      pageNumber,
+      title: `Página ${pageNumber}`,
+      blocks,
+    });
+  }
+
+  return { pages, assets };
+}
+
+// ============================================================================
+// EXTRATOR NATIVO DE IDML
+// ============================================================================
+async function extractFromIdml(
+  filePath: string,
+  assetsDir: string
+): Promise<{ pages: ProjectPage[]; assets: ProjectAsset[] }> {
+  const zip = new AdmZip(filePath);
+  const entries = zip.getEntries();
+  const assets: ProjectAsset[] = [];
+  let imgIndex = 1;
+
+  // 1. Extração de mídias embutidas no pacote IDML
+  for (const e of entries) {
+    if (e.isDirectory) continue;
+    const name = e.entryName.toLowerCase();
+    if (/\.(png|jpg|jpeg|gif|svg)$/.test(name)) {
+      const fileName = `img_${imgIndex}_${path.basename(e.entryName)}`;
+      const target = path.join(assetsDir, fileName);
+      await fs.writeFile(target, e.getData());
+      assets.push({
+        id: randomUUID(),
+        fileName,
+        path: `assets/${fileName}`,
+        mimeType: name.endsWith(".png") ? "image/png" : "image/jpeg",
+        altText: path.basename(e.entryName),
+      });
+      imgIndex++;
+    }
+  }
+
+  // 2. Extrai e mapeia todas as Stories por ID e por ParagraphStyleRange
+  const storyMap = new Map<string, Array<{ text: string; isHeading: boolean }>>();
+  const allParagraphs: Array<{ text: string; isHeading: boolean }> = [];
+  const storyEntries = entries.filter((e) => /stories\/story_/i.test(e.entryName) && e.entryName.endsWith(".xml"));
+
+  for (const entry of storyEntries) {
+    const storyIdMatch = entry.entryName.match(/Story_([^\.]+)\.xml/i);
+    const storyId = storyIdMatch ? storyIdMatch[1] : entry.entryName;
+    const xml = entry.getData().toString("utf8");
+
+    const storyParagraphs: Array<{ text: string; isHeading: boolean }> = [];
+    const pRanges = xml.match(/<ParagraphStyleRange[\s\S]*?<\/ParagraphStyleRange>/g) || [];
+
+    if (pRanges.length > 0) {
+      for (const pr of pRanges) {
+        // Detecta se o estilo aplicado sugere título
+        const isHeadingStyle =
+          /AppliedParagraphStyle="[^"]*(titulo|heading|subtitulo|h1|h2|h3|repertorio|destaque|caderno)/i.test(pr);
+
+        const contents = pr.match(/<Content[^>]*>([\s\S]*?)<\/Content>/g) || [];
+        const textParts = contents.map((c) =>
+          c
+            .replace(/<[^>]+>/g, "")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&")
+        );
+        const fullP = textParts.join("").trim();
+        if (fullP) {
+          const isHeading =
+            isHeadingStyle ||
+            (fullP.length < 65 &&
+              (fullP === fullP.toUpperCase() ||
+                fullP.endsWith(":") ||
+                /^(cap[ií]tulo|unidade|caderno|habilidades|atividade|para ampliar|meu repertório)/i.test(fullP)));
+
+          storyParagraphs.push({ text: fullP, isHeading });
+          allParagraphs.push({ text: fullP, isHeading });
+        }
+      }
+    } else {
+      // Fallback para qualquer tag Content
+      const contents = xml.match(/<Content[^>]*>([\s\S]*?)<\/Content>/g) || [];
+      for (const c of contents) {
+        const text = c
+          .replace(/<[^>]+>/g, "")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .trim();
+        if (text) {
+          const isHeading =
+            text.length < 60 &&
+            (text === text.toUpperCase() ||
+              text.endsWith(":") ||
+              /^(cap[ií]tulo|unidade|caderno|habilidades|atividade)/i.test(text));
+          storyParagraphs.push({ text, isHeading });
+          allParagraphs.push({ text, isHeading });
+        }
+      }
+    }
+
+    if (storyParagraphs.length > 0) {
+      storyMap.set(storyId, storyParagraphs);
+    }
+  }
+
+  // 3. Busca links externos de imagens nas Spreads
+  const fileDir = path.dirname(filePath);
+  const possibleSearchDirs = [
+    fileDir,
+    path.join(fileDir, "Links"),
+    path.join(fileDir, "exemplos"),
+    path.join(process.cwd(), "exemplos"),
+    path.join(process.cwd(), "exemplos", "Links"),
+    path.join(process.cwd(), "data", "projects"),
+  ];
+
+  async function resolveImageFile(cleanName: string): Promise<string | null> {
+    for (const sDir of possibleSearchDirs) {
+      const candidate = path.join(sDir, cleanName);
+      try {
+        const data = await fs.readFile(candidate);
+        const targetName = `img_${imgIndex}_${cleanName.replace(/[^a-zA-Z0-9_\.]/g, "_")}`;
+        await fs.writeFile(path.join(assetsDir, targetName), data);
+        imgIndex++;
+        return `assets/${targetName}`;
+      } catch {}
+    }
+    return null;
+  }
+
+  // 4. Mapear Spreads do InDesign
+  const spreadEntries = entries.filter((e) => /Spreads\/Spread_/i.test(e.entryName));
+  const pages: ProjectPage[] = [];
+  const usedStoryIds = new Set<string>();
+
+  for (let sIdx = 0; sIdx < spreadEntries.length; sIdx++) {
+    const sEntry = spreadEntries[sIdx];
+    const xml = sEntry.getData().toString("utf8");
+    const pageNumber = sIdx + 1;
+    const blocks: Block[] = [];
+
+    // Pegar ParentStories nesta Spread
+    const storyRefs = Array.from(xml.matchAll(/ParentStory="([^"]+)"/g)).map((m) => m[1]);
+    const uniqueStories = Array.from(new Set(storyRefs));
+
+    // Pegar Imagens/Links nesta Spread
+    const linkRefs = Array.from(xml.matchAll(/LinkResourceURI="([^"]+)"/g)).map((m) => m[1]);
+
+    // Tratar imagens da Spread
+    for (const rawUri of linkRefs) {
+      let cleanName = "";
+      try {
+        cleanName = path.basename(decodeURIComponent(rawUri));
+      } catch {
+        cleanName = path.basename(rawUri);
+      }
+
+      if (cleanName) {
+        const resolvedPath = await resolveImageFile(cleanName);
+        if (resolvedPath) {
+          const assetObj: ProjectAsset = {
+            id: randomUUID(),
+            fileName: cleanName,
+            path: resolvedPath,
+            mimeType: cleanName.endsWith(".png") ? "image/png" : "image/jpeg",
+            altText: cleanName,
+          };
+          assets.push(assetObj);
+          blocks.push({
+            id: randomUUID(),
+            type: "image",
+            data: {
+              src: resolvedPath,
+              alt: cleanName,
+              caption: cleanName,
+              enableZoom: true,
+            },
+          });
+        } else {
+          // Registra referência nominal
+          const assetObj: ProjectAsset = {
+            id: randomUUID(),
+            fileName: cleanName,
+            path: `assets/${cleanName}`,
+            mimeType: "image/placeholder",
+            altText: cleanName,
+          };
+          if (!assets.some((a) => a.fileName === cleanName)) {
+            assets.push(assetObj);
+          }
+          blocks.push({
+            id: randomUUID(),
+            type: "image",
+            data: {
+              src: `assets/${cleanName}`,
+              alt: cleanName,
+              caption: `Recurso do InDesign: ${cleanName}`,
+              enableZoom: false,
+            },
+          });
+        }
+      }
+    }
+
+    // Tratar textos das Stories desta Spread
+    for (const sid of uniqueStories) {
+      usedStoryIds.add(sid);
+      const paragraphs = storyMap.get(sid);
+      if (paragraphs) {
+        for (const p of paragraphs) {
+          if (p.isHeading) {
+            blocks.push({
+              id: randomUUID(),
+              type: "heading",
+              data: { level: p.text.length < 35 ? 2 : 3, text: p.text },
+            });
+          } else {
+            blocks.push({
+              id: randomUUID(),
+              type: "paragraph",
+              data: { html: escapeHtml(p.text) },
+            });
+          }
+        }
+      }
+    }
+
+    if (blocks.length > 0) {
+      pages.push({
+        id: randomUUID(),
+        pageNumber,
+        title: `Página ${pageNumber}`,
+        blocks,
+      });
+    }
+  }
+
+  // 5. Stories que não estavam vinculadas explicitamente às Spreads
+  const unusedStories: Array<{ text: string; isHeading: boolean }> = [];
+  for (const [sid, pList] of storyMap.entries()) {
+    if (!usedStoryIds.has(sid)) {
+      unusedStories.push(...pList);
+    }
+  }
+
+  // Se o documento não gerou páginas pelos Spreads (como C2 e C4 onde o Spread não tinha ParentStory), ou sobrou conteúdo
+  if (pages.length === 0 || unusedStories.length > 0) {
+    const fallbackList = pages.length === 0 ? allParagraphs : unusedStories;
+    const chunkSize = 8;
+    const numPages = Math.max(1, Math.ceil(fallbackList.length / chunkSize));
+
+    for (let i = 0; i < numPages; i++) {
+      const pageNumber = pages.length + 1;
+      const chunk = fallbackList.slice(i * chunkSize, (i + 1) * chunkSize);
+      const blocks: Block[] = [];
+
+      for (const p of chunk) {
+        if (p.isHeading) {
+          blocks.push({
+            id: randomUUID(),
+            type: "heading",
+            data: { level: p.text.length < 35 ? 2 : 3, text: p.text },
+          });
+        } else {
+          blocks.push({
+            id: randomUUID(),
+            type: "paragraph",
+            data: { html: escapeHtml(p.text) },
+          });
+        }
+      }
+
+      if (blocks.length > 0) {
+        pages.push({
+          id: randomUUID(),
+          pageNumber,
+          title: `Página ${pageNumber}`,
+          blocks,
+        });
+      }
+    }
+  }
+
+  return { pages, assets };
+}
+
+function collectXmlContent(obj: any, out: string[]) {
   if (!obj || typeof obj !== "object") return;
   if (Array.isArray(obj)) {
-    for (const item of obj) collectContent(item, out);
+    for (const item of obj) collectXmlContent(item, out);
     return;
   }
   for (const key of Object.keys(obj)) {
@@ -129,9 +750,11 @@ function collectContent(obj: any, out: string[]) {
     if (key === "Content" || key.endsWith(":Content")) {
       if (typeof val === "string") out.push(val);
       else if (val && typeof val === "object" && val["#text"]) out.push(String(val["#text"]));
-      else if (Array.isArray(val)) for (const v of val) collectContent({ Content: v }, out);
+      else if (Array.isArray(val)) {
+        for (const v of val) collectXmlContent({ Content: v }, out);
+      }
     } else {
-      collectContent(val, out);
+      collectXmlContent(val, out);
     }
   }
 }
@@ -140,58 +763,55 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildHtml(title: string, sections: { heading: string; content: string }[], images: { src: string; alt: string }[]) {
-  const sectionsHtml = sections.map((s, i) => `
-    <section class="accordion">
-      <button class="accordion-header" aria-expanded="false">${escapeHtml(s.heading)}</button>
-      <div class="accordion-body">${s.content}</div>
-    </section>`).join("\n");
-  const imagesHtml = images.length
-    ? `<div class="gallery">${images.map((im) => `<img src="${im.src}" alt="${escapeHtml(im.alt)}" loading="lazy"/>`).join("")}</div>`
-    : "";
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>${escapeHtml(title)}</title>
-<link rel="stylesheet" href="styles.css"/>
-</head>
-<body>
-<header><h1>${escapeHtml(title)}</h1></header>
-<main>
-${imagesHtml}
-${sectionsHtml}
-</main>
-<script src="script.js"></script>
-</body>
-</html>`;
+// ============================================================================
+// PERSISTÊNCIA E GERAÇÃO WEB ESTÁTICA
+// ============================================================================
+export async function saveProjectDocument(doc: ProjectDocument): Promise<void> {
+  await ensureDirs();
+  const projectDir = path.join(PROJECTS_DIR, doc.id);
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.mkdir(path.join(projectDir, "assets"), { recursive: true });
+
+  doc.updatedAt = new Date().toISOString();
+
+  // Salvar project.json
+  await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify(doc, null, 2), "utf8");
+
+  // Salvar meta.json
+  const meta = getProjectMeta(doc);
+  await fs.writeFile(path.join(projectDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+
+  // Gerar arquivos estáticos web (index.html, styles.css, script.js)
+  const html = buildHtmlFromDoc(doc);
+  const css = buildCssFromDoc(doc);
+  const js = buildJsFromDoc();
+
+  await fs.writeFile(path.join(projectDir, "index.html"), html, "utf8");
+  await fs.writeFile(path.join(projectDir, "styles.css"), css, "utf8");
+  await fs.writeFile(path.join(projectDir, "script.js"), js, "utf8");
 }
 
-function buildCss() {
-  return `*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f7f7f9;color:#222;line-height:1.6}
-header{background:#1e3a8a;color:#fff;padding:24px;text-align:center}
-header h1{margin:0;font-size:1.8rem}
-main{max-width:900px;margin:24px auto;padding:0 16px}
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
-.gallery img{width:100%;height:auto;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
-.accordion{background:#fff;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:12px;overflow:hidden}
-.accordion-header{width:100%;text-align:left;padding:14px 18px;font-size:1.05rem;font-weight:600;border:none;background:#fff;cursor:pointer}
-.accordion-header:hover{background:#f3f4f6}
-.accordion-body{display:none;padding:0 18px 18px;white-space:pre-wrap}
-.accordion.open .accordion-body{display:block}
-.accordion.open .accordion-header{background:#eef2ff}
-`;
+export async function getProjectDocument(id: string): Promise<ProjectDocument> {
+  const projectDir = path.join(PROJECTS_DIR, id);
+  const raw = await fs.readFile(path.join(projectDir, "project.json"), "utf8");
+  return JSON.parse(raw) as ProjectDocument;
 }
 
-function buildJs() {
-  return `document.querySelectorAll('.accordion-header').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const sec = btn.parentElement;
-    const open = sec.classList.toggle('open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-});`;
+export function getProjectMeta(doc: ProjectDocument): ProjectMeta {
+  let blockCount = 0;
+  for (const p of doc.pages) {
+    blockCount += p.blocks?.length || 0;
+  }
+  return {
+    id: doc.id,
+    name: doc.title,
+    sourceFormat: doc.sourceFormat,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    pageCount: doc.pages.length,
+    blockCount,
+    assetCount: doc.assets.length,
+  };
 }
 
 export async function listProjects(): Promise<ProjectMeta[]> {
@@ -203,16 +823,27 @@ export async function listProjects(): Promise<ProjectMeta[]> {
     try {
       const raw = await fs.readFile(path.join(PROJECTS_DIR, e.name, "meta.json"), "utf8");
       metas.push(JSON.parse(raw));
-    } catch {}
+    } catch { }
   }
-  metas.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  metas.sort((a, b) => {
+    const timeB = b?.updatedAt || b?.createdAt || "";
+    const timeA = a?.updatedAt || a?.createdAt || "";
+    return timeB.localeCompare(timeA);
+  });
   return metas;
 }
 
-export async function getProjectDir(id: string) {
+export async function getProjectDir(id: string): Promise<string> {
   const dir = path.join(PROJECTS_DIR, id);
   await fs.access(path.join(dir, "index.html"));
   return dir;
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const dir = path.join(PROJECTS_DIR, id);
+  await fs.rm(dir, { recursive: true, force: true });
+  const zipFile = path.join(PROJECTS_DIR, `${id}.zip`);
+  await fs.unlink(zipFile).catch(() => { });
 }
 
 export async function zipProject(id: string): Promise<string> {
@@ -222,4 +853,651 @@ export async function zipProject(id: string): Promise<string> {
   zip.addLocalFolder(dir);
   zip.writeZip(zipPath);
   return zipPath;
+}
+
+// ============================================================================
+// BUILD WEB FINAL (HTML5 + CSS + VANILLA JS)
+// ============================================================================
+function buildHtmlFromDoc(doc: ProjectDocument): string {
+  const navItems = doc.pages
+    .map(
+      (p, i) =>
+        `<a href="#page-${p.id}" class="nav-item ${i === 0 ? "active" : ""}" data-page-target="page-${p.id}">
+          <span class="nav-num">${p.pageNumber}</span>
+          <span class="nav-title">${escapeHtml(p.title || `Página ${p.pageNumber}`)}</span>
+        </a>`
+    )
+    .join("\n");
+
+  const pagesHtml = doc.pages
+    .map(
+      (p) => `
+    <article id="page-${p.id}" class="book-page">
+      <header class="page-header">
+        <span class="page-badge">Página ${p.pageNumber}</span>
+        <h2 class="page-title">${escapeHtml(p.title || "")}</h2>
+      </header>
+      <div class="page-content">
+        ${p.blocks.map((b) => renderBlockHtml(b)).join("\n")}
+      </div>
+    </article>`
+    )
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR" data-theme="${doc.theme.mode || "light"}">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${escapeHtml(doc.title)}</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Barra Superior -->
+    <header class="top-bar">
+      <div class="top-brand">
+        <span class="brand-badge">SESI</span>
+        <h1 class="book-heading">${escapeHtml(doc.title)}</h1>
+      </div>
+      <div class="top-controls">
+        <button id="btn-theme-toggle" class="btn-ctrl" title="Alternar tema claro/escuro">🌓 Tema</button>
+        <button id="btn-print" class="btn-ctrl" title="Imprimir / Salvar PDF">🖨️ Imprimir</button>
+      </div>
+    </header>
+
+    <div class="main-container">
+      <!-- Navegação lateral por páginas -->
+      <aside class="sidebar-nav" aria-label="Navegação de páginas">
+        <div class="nav-header">
+          <h3>Sumário de Páginas</h3>
+          <span class="badge-count">${doc.pages.length} páginas</span>
+        </div>
+        <nav class="nav-list">
+          ${navItems}
+        </nav>
+      </aside>
+
+      <!-- Conteúdo principal -->
+      <main class="content-area">
+        ${pagesHtml}
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal de Zoom para Imagens -->
+  <div id="image-modal" class="modal-overlay" aria-hidden="true" role="dialog">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close-btn" aria-label="Fechar zoom">&times;</button>
+      <img id="modal-image" src="" alt="" />
+      <p id="modal-caption" class="modal-caption"></p>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>`;
+}
+
+function renderBlockHtml(block: Block): string {
+  switch (block.type) {
+    case "heading": {
+      const tag = `h${block.data.level || 2}`;
+      return `<${tag} class="block-heading block-heading-${block.data.level}">${escapeHtml(block.data.text)}</${tag}>`;
+    }
+    case "paragraph": {
+      return `<div class="block-paragraph"><p>${block.data.html}</p></div>`;
+    }
+    case "image": {
+      const zoomClass = block.data.enableZoom ? "can-zoom" : "";
+      const imgTag = `<img src="${block.data.src}" alt="${escapeHtml(block.data.alt || "")}" class="${zoomClass}" data-caption="${escapeHtml(block.data.caption || "")}" loading="lazy"/>`;
+      const linkedImg = block.data.linkUrl
+        ? `<a href="${escapeHtml(block.data.linkUrl)}" target="_blank" rel="noopener noreferrer" class="img-link">${imgTag}<span class="link-hint">🔗 Abrir link externo</span></a>`
+        : imgTag;
+      return `
+        <figure class="block-image">
+          ${linkedImg}
+          ${block.data.caption ? `<figcaption>${escapeHtml(block.data.caption)}</figcaption>` : ""}
+        </figure>`;
+    }
+    case "accordion": {
+      const items = (block.data.items || [])
+        .map(
+          (item) => `
+        <div class="acc-item ${item.defaultOpen ? "open" : ""}">
+          <button class="acc-header" aria-expanded="${item.defaultOpen ? "true" : "false"}">
+            <span class="acc-title">${escapeHtml(item.title)}</span>
+            <span class="acc-icon" aria-hidden="true">▾</span>
+          </button>
+          <div class="acc-body">
+            <div class="acc-inner">${item.contentHtml}</div>
+          </div>
+        </div>`
+        )
+        .join("\n");
+      return `
+        <div class="block-accordion">
+          ${block.data.title ? `<h3 class="acc-main-title">${escapeHtml(block.data.title)}</h3>` : ""}
+          <div class="acc-group">${items}</div>
+        </div>`;
+    }
+    case "tabs": {
+      const tabHeaders = (block.data.items || [])
+        .map(
+          (tab, idx) =>
+            `<button class="tab-btn ${idx === 0 ? "active" : ""}" data-tab-target="tab-${tab.id}">${escapeHtml(tab.label)}</button>`
+        )
+        .join("");
+      const tabContents = (block.data.items || [])
+        .map(
+          (tab, idx) =>
+            `<div id="tab-${tab.id}" class="tab-pane ${idx === 0 ? "active" : ""}">${tab.contentHtml}</div>`
+        )
+        .join("");
+      return `
+        <div class="block-tabs">
+          <div class="tabs-header" role="tablist">${tabHeaders}</div>
+          <div class="tabs-body">${tabContents}</div>
+        </div>`;
+    }
+    case "callout": {
+      const variantIcons: Record<string, string> = {
+        info: "ℹ️",
+        tip: "💡",
+        warning: "⚠️",
+        curiosity: "🔍",
+      };
+      const icon = variantIcons[block.data.variant] || "📌";
+      return `
+        <aside class="block-callout callout-${block.data.variant || "info"}">
+          <div class="callout-header">
+            <span class="callout-icon">${icon}</span>
+            <strong class="callout-title">${escapeHtml(block.data.title || "Destaque")}</strong>
+          </div>
+          <div class="callout-content">${block.data.contentHtml}</div>
+        </aside>`;
+    }
+    case "video": {
+      let embedHtml = "";
+      if (block.data.source === "youtube") {
+        const videoId = extractYoutubeId(block.data.url);
+        embedHtml = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="${escapeHtml(block.data.title || "Vídeo")}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      } else {
+        embedHtml = `<video controls src="${escapeHtml(block.data.url)}"></video>`;
+      }
+      return `
+        <div class="block-video">
+          <div class="video-container">${embedHtml}</div>
+          ${block.data.caption ? `<p class="video-caption">${escapeHtml(block.data.caption)}</p>` : ""}
+        </div>`;
+    }
+    case "quiz": {
+      const opts = (block.data.options || [])
+        .map(
+          (opt) => `
+        <button class="quiz-opt" data-correct="${opt.isCorrect}">
+          <span class="opt-bullet"></span>
+          <span class="opt-text">${escapeHtml(opt.text)}</span>
+        </button>`
+        )
+        .join("\n");
+      return `
+        <div class="block-quiz">
+          <div class="quiz-badge">Atividade Interativa</div>
+          <h4 class="quiz-question">${escapeHtml(block.data.question)}</h4>
+          <div class="quiz-options">${opts}</div>
+          <div class="quiz-feedback" aria-live="polite"></div>
+          ${block.data.explanation ? `<p class="quiz-explanation hidden">${escapeHtml(block.data.explanation)}</p>` : ""}
+        </div>`;
+    }
+    case "external-embed": {
+      return `
+        <div class="block-embed">
+          <iframe src="${escapeHtml(block.data.embedUrl)}" title="${escapeHtml(block.data.title || "Recurso Interativo")}"></iframe>
+        </div>`;
+    }
+    default:
+      return "";
+  }
+}
+
+function extractYoutubeId(url: string): string {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  return m ? m[1] : url;
+}
+
+function buildCssFromDoc(doc: ProjectDocument): string {
+  const brandRed = doc.theme.primaryColor || "#d42731";
+  return `/* CSS Estático e Responsivo — Build Interativo */
+:root {
+  --brand-red: ${brandRed};
+  --brand-red-hover: #b51c24;
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #0f172a;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] {
+  --bg-page: #0b0f19;
+  --bg-surface: #1e293b;
+  --bg-sidebar: #020617;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: ${doc.theme.fontFamily || "system-ui, -apple-system, sans-serif"};
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  line-height: 1.65;
+  font-size: 16px;
+}
+
+/* Layout Geral */
+.app-layout { display: flex; flex-direction: column; min-height: 100vh; }
+.top-bar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: var(--shadow-sm);
+}
+.top-brand { display: flex; align-items: center; gap: 12px; }
+.brand-badge {
+  background: var(--brand-red);
+  color: #fff;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+.book-heading { font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
+.top-controls { display: flex; gap: 8px; }
+.btn-ctrl {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-ctrl:hover { background: rgba(0,0,0,0.05); }
+
+.main-container { display: flex; flex: 1; }
+
+/* Sidebar */
+.sidebar-nav {
+  width: 280px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
+  padding: 20px 14px;
+  position: sticky;
+  top: 61px;
+  height: calc(100vh - 61px);
+  overflow-y: auto;
+}
+.nav-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.nav-header h3 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.badge-count { font-size: 0.75rem; background: var(--border-color); padding: 2px 8px; border-radius: 12px; }
+.nav-list { display: flex; flex-direction: column; gap: 6px; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: var(--text-main);
+  text-decoration: none;
+  font-size: 0.92rem;
+  transition: all 0.15s;
+}
+.nav-item:hover { background: rgba(0,0,0,0.04); }
+.nav-item.active { background: var(--brand-red); color: #fff; font-weight: 600; }
+.nav-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.08);
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+}
+.nav-item.active .nav-num { background: rgba(255,255,255,0.25); color: #fff; }
+
+/* Content Area */
+.content-area {
+  flex: 1;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 36px 24px 80px;
+}
+.book-page {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 36px;
+  margin-bottom: 40px;
+  box-shadow: var(--shadow-sm);
+}
+.page-header {
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 16px;
+  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.page-badge {
+  background: var(--brand-red);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.page-title { font-size: 1.5rem; font-weight: 700; color: var(--text-main); }
+.page-content { display: flex; flex-direction: column; gap: 24px; }
+
+/* Blocos */
+.block-heading-1 { font-size: 1.85rem; font-weight: 800; color: var(--brand-red); margin-top: 12px; }
+.block-heading-2 { font-size: 1.45rem; font-weight: 700; color: var(--text-main); margin-top: 8px; border-left: 4px solid var(--brand-red); padding-left: 12px; }
+.block-heading-3 { font-size: 1.2rem; font-weight: 600; color: var(--text-main); }
+.block-paragraph p { font-size: 1.05rem; line-height: 1.75; color: var(--text-main); }
+
+/* Imagens */
+.block-image { text-align: center; margin: 12px 0; }
+.block-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s;
+}
+.block-image img.can-zoom { cursor: zoom-in; }
+.block-image img.can-zoom:hover { transform: scale(1.015); box-shadow: var(--shadow-md); }
+.block-image figcaption { margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
+.img-link { text-decoration: none; display: block; position: relative; }
+.link-hint {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--brand-red);
+  font-weight: 600;
+}
+
+/* Accordion */
+.block-accordion { margin: 16px 0; }
+.acc-main-title { font-size: 1.15rem; margin-bottom: 12px; }
+.acc-group { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
+.acc-item { border-bottom: 1px solid var(--border-color); }
+.acc-item:last-child { border-bottom: none; }
+.acc-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+}
+.acc-header:hover { background: rgba(0,0,0,0.03); }
+.acc-icon { transition: transform 0.2s; }
+.acc-item.open .acc-icon { transform: rotate(180deg); }
+.acc-body { display: none; padding: 0 20px 20px; background: var(--bg-surface); }
+.acc-item.open .acc-body { display: block; }
+
+/* Tabs */
+.block-tabs { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; margin: 16px 0; }
+.tabs-header { display: flex; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border-color); }
+.tab-btn {
+  padding: 12px 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  border-bottom: 3px solid transparent;
+}
+.tab-btn.active { color: var(--brand-red); border-bottom-color: var(--brand-red); background: var(--bg-surface); }
+.tabs-body { padding: 20px; background: var(--bg-surface); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Callout Box */
+.block-callout {
+  padding: 18px 22px;
+  border-radius: var(--radius-md);
+  border-left: 5px solid;
+  margin: 16px 0;
+}
+.callout-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.callout-title { font-size: 1.05rem; }
+.callout-info { background: #eff6ff; border-color: #3b82f6; color: #1e3a8a; }
+.callout-tip { background: #f0fdf4; border-color: #22c55e; color: #14532d; }
+.callout-warning { background: #fefce8; border-color: #eab308; color: #713f12; }
+.callout-curiosity { background: #faf5ff; border-color: #a855f7; color: #581c87; }
+
+/* Quiz Interativo */
+.block-quiz {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 2px dashed #cbd5e1;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin: 20px 0;
+}
+[data-theme="dark"] .block-quiz { background: #1e293b; border-color: #475569; }
+.quiz-badge {
+  display: inline-block;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+.quiz-question { font-size: 1.15rem; font-weight: 700; margin-bottom: 16px; color: var(--text-main); }
+.quiz-options { display: flex; flex-direction: column; gap: 10px; }
+.quiz-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+.quiz-opt:hover { border-color: var(--brand-red); background: rgba(0,0,0,0.02); }
+.opt-bullet { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #94a3b8; }
+.quiz-opt.selected-correct {
+  background: #dcfce7 !important;
+  border-color: #22c55e !important;
+  color: #15803d !important;
+  font-weight: 600;
+}
+.quiz-opt.selected-wrong {
+  background: #fee2e2 !important;
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+}
+.quiz-feedback { margin-top: 14px; font-weight: 600; font-size: 0.95rem; }
+.quiz-explanation {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  background: rgba(0,0,0,0.04);
+  padding: 10px 14px;
+  border-radius: 6px;
+}
+.hidden { display: none; }
+
+/* Vídeo */
+.block-video { margin: 16px 0; }
+.video-container {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.video-container iframe, .video-container video {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+
+/* Modal de Zoom */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85);
+  z-index: 999;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal-content { position: relative; max-width: 90vw; max-height: 90vh; text-align: center; }
+.modal-content img { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.modal-close {
+  position: absolute;
+  top: -40px; right: 0;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 2.2rem;
+  cursor: pointer;
+}
+.modal-caption { color: #e2e8f0; margin-top: 10px; font-size: 0.95rem; }
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .sidebar-nav { display: none; }
+  .content-area { padding: 16px 12px; }
+  .book-page { padding: 20px 16px; }
+  .book-heading { font-size: 1.05rem; }
+}
+`;
+}
+
+function buildJsFromDoc(): string {
+  return `// Script Interativo Vanilla JS (Sem dependências, offline-ready)
+document.addEventListener("DOMContentLoaded", () => {
+  // 1. Accordion
+  document.querySelectorAll(".acc-header").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const item = btn.parentElement;
+      const isOpen = item.classList.toggle("open");
+      btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    });
+  });
+
+  // 2. Tabs
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const parent = btn.closest(".block-tabs");
+      const targetId = btn.getAttribute("data-tab-target");
+      parent.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      parent.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      const targetPane = parent.querySelector("#" + targetId);
+      if (targetPane) targetPane.classList.add("active");
+    });
+  });
+
+  // 3. Quiz Interativo
+  document.querySelectorAll(".block-quiz").forEach(quiz => {
+    const opts = quiz.querySelectorAll(".quiz-opt");
+    const feedback = quiz.querySelector(".quiz-feedback");
+    const explanation = quiz.querySelector(".quiz-explanation");
+
+    opts.forEach(btn => {
+      btn.addEventListener("click", () => {
+        opts.forEach(b => b.classList.remove("selected-correct", "selected-wrong"));
+        const isCorrect = btn.getAttribute("data-correct") === "true";
+        if (isCorrect) {
+          btn.classList.add("selected-correct");
+          feedback.textContent = "✅ Parabéns, resposta correta!";
+          feedback.style.color = "#15803d";
+        } else {
+          btn.classList.add("selected-wrong");
+          feedback.textContent = "❌ Resposta incorreta. Tente novamente!";
+          feedback.style.color = "#b91c1c";
+        }
+        if (explanation) explanation.classList.remove("hidden");
+      });
+    });
+  });
+
+  // 4. Modal de Zoom de Imagens
+  const modal = document.getElementById("image-modal");
+  const modalImg = document.getElementById("modal-image");
+  const modalCaption = document.getElementById("modal-caption");
+  const closeBtn = document.getElementById("modal-close-btn");
+
+  document.querySelectorAll(".block-image img.can-zoom").forEach(img => {
+    img.addEventListener("click", () => {
+      if (modal && modalImg) {
+        modalImg.src = img.src;
+        if (modalCaption) modalCaption.textContent = img.getAttribute("data-caption") || img.alt || "";
+        modal.classList.add("active");
+      }
+    });
+  });
+
+  if (closeBtn && modal) {
+    closeBtn.addEventListener("click", () => modal.classList.remove("active"));
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.remove("active");
+    });
+  }
+
+  // 5. Alternar Tema Claro/Escuro
+  const themeBtn = document.getElementById("btn-theme-toggle");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      const next = current === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+    });
+  }
+
+  // 6. Imprimir
+  const printBtn = document.getElementById("btn-print");
+  if (printBtn) {
+    printBtn.addEventListener("click", () => window.print());
+  }
+});
+`;
 }

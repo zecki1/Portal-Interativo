@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ET EF1 ME C2</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Barra Superior -->
+    <header class="top-bar">
+      <div class="top-brand">
+        <span class="brand-badge">SESI</span>
+        <h1 class="book-heading">ET EF1 ME C2</h1>
+      </div>
+      <div class="top-controls">
+        <button id="btn-theme-toggle" class="btn-ctrl" title="Alternar tema claro/escuro">🌓 Tema</button>
+        <button id="btn-print" class="btn-ctrl" title="Imprimir / Salvar PDF">🖨️ Imprimir</button>
+      </div>
+    </header>
+
+    <div class="main-container">
+      <!-- Navegação lateral por páginas -->
+      <aside class="sidebar-nav" aria-label="Navegação de páginas">
+        <div class="nav-header">
+          <h3>Sumário de Páginas</h3>
+          <span class="badge-count">1 páginas</span>
+        </div>
+        <nav class="nav-list">
+          <a href="#page-d7aa377d-7440-4e76-bc97-1b8714185808" class="nav-item active" data-page-target="page-d7aa377d-7440-4e76-bc97-1b8714185808">
+          <span class="nav-num">1</span>
+          <span class="nav-title">Seção 1</span>
+        </a>
+        </nav>
+      </aside>
+
+      <!-- Conteúdo principal -->
+      <main class="content-area">
+        
+    <article id="page-d7aa377d-7440-4e76-bc97-1b8714185808" class="book-page">
+      <header class="page-header">
+        <span class="page-badge">Página 1</span>
+        <h2 class="page-title">Seção 1</h2>
+      </header>
+      <div class="page-content">
+        <h2 class="block-heading block-heading-2">1º</h2>
+<h2 class="block-heading block-heading-2">CADERNO 2</h2>
+      </div>
+    </article>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal de Zoom para Imagens -->
+  <div id="image-modal" class="modal-overlay" aria-hidden="true" role="dialog">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close-btn" aria-label="Fechar zoom">&times;</button>
+      <img id="modal-image" src="" alt="" />
+      <p id="modal-caption" class="modal-caption"></p>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

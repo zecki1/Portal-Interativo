@@ -1,0 +1,53 @@
+{
+  "id": "03bf77cf-11ac-4740-9e01-9a9128f89985",
+  "title": "ET EF1 ME C2",
+  "sourceFormat": "IDML",
+  "createdAt": "2026-11-24T14:02:22.162Z",
+  "updatedAt": "2026-11-24T14:02:22.164Z",
+  "theme": {
+    "primaryColor": "#d42731",
+    "fontFamily": "system-ui, -apple-system, sans-serif",
+    "mode": "light"
+  },
+  "assets": [
+    {
+      "id": "85b1494d-c2b6-4b5d-9cd7-4e1242b9d3d1",
+      "fileName": "AdobeStock_513273264.jpeg",
+      "path": "assets/AdobeStock_513273264.jpeg",
+      "mimeType": "image/placeholder",
+      "altText": "Recurso do InDesign: AdobeStock_513273264.jpeg"
+    },
+    {
+      "id": "4cf2032d-30c6-4285-9a98-ebe5472e2a29",
+      "fileName": "476e799b-14b2-4df1-a2f2-979f73f928fa;node=8faa4830-63bd-4d23-a89e-ceef0c02a6dd",
+      "path": "assets/476e799b-14b2-4df1-a2f2-979f73f928fa;node=8faa4830-63bd-4d23-a89e-ceef0c02a6dd",
+      "mimeType": "image/placeholder",
+      "altText": "Recurso do InDesign: 476e799b-14b2-4df1-a2f2-979f73f928fa;node=8faa4830-63bd-4d23-a89e-ceef0c02a6dd"
+    }
+  ],
+  "pages": [
+    {
+      "id": "6aa857be-7868-4475-a87d-cf59501c881f",
+      "pageNumber": 1,
+      "title": "Seção 1",
+      "blocks": [
+        {
+          "id": "928d668a-197b-4a4f-86c4-a1731ac9f606",
+          "type": "heading",
+          "data": {
+            "level": 2,
+            "text": "1º"
+          }
+        },
+        {
+          "id": "d916b6be-352e-45f7-9b26-2622e31e0f28",
+          "type": "heading",
+          "data": {
+            "level": 2,
+            "text": "CADERNO 2"
+          }
+        }
+      ]
+    }
+  ]
+}
