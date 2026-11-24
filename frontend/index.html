@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#D42731" />
+    <meta
+      name="description"
+      content="Catálogo de recursos do SESI: imagens, vetores e arquivos com busca por tags, frases e autores."
+    />
+    <title>Catálogo de Recursos · SESI</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <script>
+      // Aplica o tema salvo antes da primeira pintura para evitar flash.
+      (function () {
+        try {
+          var bruto = localStorage.getItem("catalogo.a11y.v1");
+          var config = bruto ? JSON.parse(bruto) : null;
+          var tema =
+            (config && config.tema) ||
+            (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "escuro"
+              : "claro");
+          document.documentElement.setAttribute("data-theme", tema);
+          if (config) {
+            document.documentElement.setAttribute("data-font-size", config.tamanhoFonte || "normal");
+            if (config.dislexia) document.documentElement.setAttribute("data-font", "opendyslexic");
+            if (config.filtro && config.filtro !== "none")
+              document.documentElement.setAttribute("data-color-filter", config.filtro);
+            document.documentElement.setAttribute("data-vlibras", config.vlibras === false ? "off" : "on");
+          }
+        } catch (e) {
+          /* preferências indisponíveis */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- VLibras (acessibilidade em Libras) -->
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper>
+        <div class="vw-plugin-top-wrapper"></div>
+      </div>
+    </div>
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+    <script>
+      new window.VLibras.Widget("https://vlibras.gov.br/app");
+    </script>
+  </body>
+</html>
