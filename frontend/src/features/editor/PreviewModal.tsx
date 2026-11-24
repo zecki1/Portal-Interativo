@@ -21,7 +21,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   onClose,
 }) => {
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
-  const previewUrl = `${apiBase}/projects/${projectId}/preview`;
+  const previewUrl = `${apiBase}/projects/${projectId}/preview/`;
   const downloadUrl = `${apiBase}/projects/${projectId}/download`;
 
   return (

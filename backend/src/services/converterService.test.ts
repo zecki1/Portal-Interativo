@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import AdmZip from "adm-zip";
 import * as converter from "./converterService.js";
+import { buildExemploDocument } from "./blocks/exemploDocument.js";
+import { buildApp } from "../app.js";
 
 describe("Converter Service & Block Architecture", () => {
   it("deve criar e salvar um documento estruturado por blocos", async () => {
@@ -89,5 +92,92 @@ describe("Converter Service & Block Architecture", () => {
 
     // Limpeza
     await converter.deleteProject("test-doc-123");
+  });
+
+  it("deve gerar o material de exemplo com todos os blocos e servir preview e export zip", async () => {
+    const doc = buildExemploDocument("exemplo-check");
+    const types = new Set(doc.pages.flatMap((p) => p.blocks.map((b) => b.type)));
+    const expectedTypes: converter.BlockType[] = [
+      "heading",
+      "paragraph",
+      "image",
+      "accordion",
+      "tabs",
+      "callout",
+      "video",
+      "quiz",
+      "external-embed",
+      "flipcard",
+      "timeline",
+      "table",
+      "cover",
+      "parallax",
+      "gallery",
+      "image-text-card",
+      "highlight",
+      "code",
+      "multiple-choice",
+      "true-false",
+      "fill-blanks",
+      "ordering",
+      "matching",
+      "memory-game",
+      "word-search",
+      "crossword",
+    ];
+    for (const t of expectedTypes) {
+      expect(types.has(t)).toBe(true);
+    }
+
+    const callouts = new Set(
+      doc.pages.flatMap((p) =>
+        p.blocks.filter((b) => b.type === "callout").map((b) => (b as Extract<converter.Block, { type: "callout" }>).data.variant)
+      )
+    );
+    expect(callouts.size).toBe(11);
+
+    const app = await buildApp();
+    let createdId = "";
+    try {
+      const createRes = await app.inject({ method: "POST", url: "/api/v1/projects/exemplo" });
+      expect(createRes.statusCode).toBe(201);
+      createdId = createRes.json().data.id;
+
+      const noSlash = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview` });
+      expect(noSlash.statusCode).toBe(302);
+      expect(noSlash.headers.location).toBe(`/api/v1/projects/${createdId}/preview/`);
+
+      const withSlash = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview/` });
+      expect(withSlash.statusCode).toBe(200);
+      expect(withSlash.headers["content-security-policy"]).toContain("frame-ancestors");
+      expect(withSlash.body).toContain('id="page-content"');
+
+      const css = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview/styles.css` });
+      expect(css.statusCode).toBe(200);
+
+      const js = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview/script.js` });
+      expect(js.statusCode).toBe(200);
+
+      const svg = await app.inject({
+        method: "GET",
+        url: `/api/v1/projects/${createdId}/preview/assets/exemplo-galeria-2.svg`,
+      });
+      expect(svg.statusCode).toBe(200);
+      expect(svg.headers["content-type"]).toContain("image/svg+xml");
+
+      const dl = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/download` });
+      expect(dl.statusCode).toBe(200);
+      expect(dl.headers["content-type"]).toContain("application/zip");
+
+      const zip = new AdmZip(dl.rawPayload);
+      const entryNames = zip.getEntries().map((e) => e.entryName);
+      expect(entryNames).toContain("index.html");
+      expect(entryNames).toContain("styles.css");
+      expect(entryNames).toContain("script.js");
+      expect(entryNames).toContain("assets/exemplo-galeria-2.svg");
+    } finally {
+      if (createdId) await converter.deleteProject(createdId);
+      await app.close();
+    }
   });
 });

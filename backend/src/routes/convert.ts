@@ -218,28 +218,30 @@ export async function convertRoutes(app: FastifyInstance) {
     const dir = await converter.getProjectDir(id).catch(() => null);
     if (!dir) return reply.status(404).send();
 
-    const target = path.join(dir, wildcard);
-    if (!target.startsWith(dir)) return reply.status(403).send();
+    const target = path.resolve(dir, wildcard);
+    if (!target.startsWith(path.resolve(dir))) return reply.status(403).send();
 
     try {
       const buf = await fs.readFile(target);
       const mime = guessMime(target);
       reply.header("Content-Type", mime);
+      if (target.endsWith(".html")) {
+        reply.header("Content-Security-Policy", previewFrameAncestors());
+      }
       return reply.send(buf);
     } catch {
       return reply.status(404).send();
     }
   });
 
-  // Serve o HTML principal do projeto no preview
+  // Redireciona /preview (sem barra final) para /preview/ para que caminhos
+  // relativos no index.html (styles.css, script.js, assets/*) resolvam certo.
   app.get("/projects/:id/preview", async (req, reply) => {
     const { id } = req.params as { id: string };
     const dir = await converter.getProjectDir(id).catch(() => null);
     if (!dir) return reply.status(404).send({ error: "Projeto não encontrado" });
-    const buf = await fs.readFile(path.join(dir, "index.html"));
-    reply.header("Content-Type", "text/html; charset=utf-8");
-    reply.header("Content-Security-Policy", previewFrameAncestors());
-    return reply.send(buf);
+    const basePath = req.url.split("?")[0];
+    return reply.redirect(`${basePath}/`, 302);
   });
 
   // Download do arquivo .zip completo (build estático)

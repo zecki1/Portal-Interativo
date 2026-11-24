@@ -11,6 +11,7 @@ import {
   LuFileText,
   LuMessageCircleQuestion,
   LuSquare,
+  LuInfo,
 } from "react-icons/lu";
 import {
   IconTrash,
@@ -404,6 +405,10 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   { id: "box-pdf", label: "PDF", icon: <LuFileText className="w-4 h-4" aria-hidden="true" />, color: "border-slate-500 bg-slate-500/10 text-ink" },
                   { id: "vamos-refletir", label: "Refletir", icon: <LuMessageCircleQuestion className="w-4 h-4" aria-hidden="true" />, color: "border-cyan-500 bg-cyan-500/10 text-ink" },
                   { id: "box", label: "Caixa", icon: <LuSquare className="w-4 h-4" aria-hidden="true" />, color: "border-border bg-surface-3 text-ink" },
+                  { id: "info", label: "Info", icon: <LuInfo className="w-4 h-4" aria-hidden="true" />, color: "border-blue-500 bg-blue-500/10 text-ink" },
+                  { id: "tip", label: "Dica (clássica)", icon: <LuLightbulb className="w-4 h-4" aria-hidden="true" />, color: "border-emerald-500 bg-emerald-500/10 text-ink" },
+                  { id: "warning", label: "Atenção", icon: <LuTriangleAlert className="w-4 h-4" aria-hidden="true" />, color: "border-amber-500 bg-amber-500/10 text-ink" },
+                  { id: "curiosity", label: "Curiosidade", icon: <LuSearch className="w-4 h-4" aria-hidden="true" />, color: "border-purple-500 bg-purple-500/10 text-ink" },
                 ].map((v) => (
                   <button
                     key={v.id}

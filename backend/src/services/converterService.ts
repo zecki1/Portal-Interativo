@@ -981,7 +981,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
       </aside>
 
       <!-- Conteúdo principal -->
-      <main class="content-area">
+      <main id="page-content" class="content-area">
         ${pagesHtml}
       </main>
     </div>
@@ -1132,7 +1132,7 @@ function renderBlockHtml(block: Block): string {
       let embedHtml = "";
       if (block.data.source === "youtube") {
         const videoId = extractYoutubeId(block.data.url);
-        embedHtml = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="${escapeHtml(block.data.title || "Vídeo")}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+        embedHtml = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="${escapeHtml(block.data.title || "Vídeo")}" frameborder="0" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
       } else {
         embedHtml = `<video controls src="${escapeHtml(block.data.url)}"></video>`;
       }
@@ -1164,7 +1164,7 @@ function renderBlockHtml(block: Block): string {
     case "external-embed": {
       return `
         <div class="block-embed">
-          <iframe src="${escapeHtml(block.data.embedUrl)}" title="${escapeHtml(block.data.title || "Recurso Interativo")}"></iframe>
+          <iframe src="${escapeHtml(block.data.embedUrl)}" title="${escapeHtml(block.data.title || "Recurso Interativo")}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
         </div>`;
     }
     default:
@@ -1573,6 +1573,22 @@ ${ICON_CSS}
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
+}
+
+/* Recurso externo (embed) */
+.block-embed {
+  margin: 16px 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface);
+}
+.block-embed iframe {
+  display: block;
+  width: 100%;
+  min-height: 460px;
+  border: 0;
 }
 
 /* Modal de Zoom */

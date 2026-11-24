@@ -79,6 +79,36 @@ export default function EditorPage() {
     }
   };
 
+  // Garante que edições pendentes sejam persistidas antes de abrir preview/exportar
+  const flushPendingSave = async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    if (doc && saveStatus !== "saved") {
+      await saveDocument(doc);
+    }
+  };
+
+  const handleOpenPreview = async () => {
+    await flushPendingSave();
+    setShowPreview(true);
+  };
+
+  const handleExportZip = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!doc) return;
+    if (saveStatus !== "saved" || saveTimeoutRef.current) {
+      e.preventDefault();
+      await flushPendingSave();
+      const a = document.createElement("a");
+      a.href = `${apiBase}/projects/${doc.id}/download`;
+      a.download = `${doc.id}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+
   // Atualização com auto-save com debounce
   const updateDoc = (updater: (prev: ProjectDocument) => ProjectDocument) => {
     setDoc((prev) => {
@@ -408,7 +438,7 @@ export default function EditorPage() {
 
           {/* Botão Preview */}
           <button
-            onClick={() => setShowPreview(true)}
+            onClick={handleOpenPreview}
             className="p-1.5 px-3 rounded-xl bg-surface-3 hover:bg-surface text-ink border border-border text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconEye className="w-4 h-4 text-brand-red" />
@@ -418,6 +448,7 @@ export default function EditorPage() {
           {/* Botão Exportar Web ZIP */}
           <a
             href={`${apiBase}/projects/${doc.id}/download`}
+            onClick={handleExportZip}
             className="p-1.5 px-4 rounded-xl bg-brand-red hover:bg-brand-red-dark text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconDownload className="w-4 h-4" />
