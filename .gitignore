@@ -16,3 +16,6 @@ backend/data/
 
 # uploads de teste enviados pela UI
 backend/uploads/
+
+# dados gerados de conversão
+data/
