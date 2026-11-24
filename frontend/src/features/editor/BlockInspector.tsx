@@ -4,7 +4,6 @@ import {
   IconTrash,
   IconCopy,
   IconClose,
-  IconSparkles,
   IconLink,
   IconSliders,
   IconPlus,
@@ -33,10 +32,10 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
 }) => {
   if (!block) {
     return (
-      <aside className="w-80 shrink-0 bg-white border-l border-slate-200 p-6 flex flex-col items-center justify-center text-center text-slate-400 select-none">
-        <IconSliders className="w-10 h-10 mb-3 opacity-40 text-slate-400" />
-        <p className="text-sm font-bold text-slate-600">Nenhum bloco selecionado</p>
-        <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
+      <aside className="w-80 shrink-0 bg-surface border-l border-border p-6 flex flex-col items-center justify-center text-center text-muted select-none transition-colors duration-200">
+        <IconSliders className="w-10 h-10 mb-3 opacity-40 text-muted" />
+        <p className="text-sm font-bold text-ink">Nenhum bloco selecionado</p>
+        <p className="text-xs text-muted mt-1 max-w-[200px]">
           Clique em qualquer bloco do canvas para editar suas configurações, estilos ou interatividades.
         </p>
       </aside>
@@ -44,12 +43,12 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
   }
 
   return (
-    <aside className="w-80 shrink-0 bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden select-none shadow-sm">
+    <aside className="w-80 shrink-0 bg-surface border-l border-border flex flex-col h-full overflow-hidden select-none shadow-sm transition-colors duration-200">
       {/* Header do Inspector */}
-      <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+      <div className="p-3.5 border-b border-border flex items-center justify-between bg-surface-3">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-brand-red"></span>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-ink">
             Propriedades: {block.type.toUpperCase()}
           </h3>
         </div>
@@ -57,21 +56,21 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
           <button
             onClick={() => onDuplicateBlock(block.id)}
             title="Duplicar este bloco"
-            className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-200"
+            className="p-1 text-muted hover:text-ink rounded hover:bg-surface-2"
           >
             <IconCopy className="w-4 h-4" />
           </button>
           <button
             onClick={() => onDeleteBlock(block.id)}
             title="Excluir este bloco"
-            className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
+            className="p-1 text-muted hover:text-brand-red rounded hover:bg-brand-red/10"
           >
             <IconTrash className="w-4 h-4" />
           </button>
           <button
             onClick={onClose}
             title="Fechar inspetor"
-            className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-200"
+            className="p-1 text-muted hover:text-ink rounded hover:bg-surface-2"
           >
             <IconClose className="w-4 h-4" />
           </button>
@@ -79,12 +78,12 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
       </div>
 
       {/* Conteúdo específico por tipo de bloco */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs text-slate-700">
+      <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs text-ink">
         {/* BLOCO: TÍTULO (HEADING) */}
         {block.type === "heading" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Nível do Título</label>
+              <label className="font-bold text-ink block mb-1.5">Nível do Título</label>
               <div className="grid grid-cols-3 gap-2">
                 {[1, 2, 3].map((lvl) => (
                   <button
@@ -99,7 +98,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     className={`py-2 text-center rounded-lg border font-bold transition ${
                       block.data.level === lvl
                         ? "bg-brand-red text-white border-brand-red"
-                        : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                        : "bg-surface-3 border-border text-muted hover:text-ink"
                     }`}
                   >
                     H{lvl}
@@ -109,7 +108,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Texto do Título</label>
+              <label className="font-bold text-ink block mb-1.5">Texto do Título</label>
               <textarea
                 value={block.data.text}
                 onChange={(e) =>
@@ -119,7 +118,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 rows={3}
-                className="w-full p-2.5 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none focus:ring-1 focus:ring-brand-red text-xs"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none focus:ring-1 focus:ring-brand-red text-xs"
               />
             </div>
           </div>
@@ -129,7 +128,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "paragraph" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Conteúdo do Parágrafo</label>
+              <label className="font-bold text-ink block mb-1.5">Conteúdo do Parágrafo</label>
               <textarea
                 value={block.data.html}
                 onChange={(e) =>
@@ -139,7 +138,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 rows={8}
-                className="w-full p-2.5 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none focus:ring-1 focus:ring-brand-red text-xs leading-relaxed"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none focus:ring-1 focus:ring-brand-red text-xs leading-relaxed"
                 placeholder="Escreva seu parágrafo..."
               />
             </div>
@@ -150,8 +149,8 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "image" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Pré-visualização da Imagem</label>
-              <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50 p-2 text-center">
+              <label className="font-bold text-ink block mb-1.5">Pré-visualização da Imagem</label>
+              <div className="rounded-lg border border-border overflow-hidden bg-surface-3 p-2 text-center">
                 <img
                   src={`${apiBase}/projects/${projectId}/preview/${block.data.src}`}
                   alt={block.data.alt}
@@ -164,7 +163,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Texto Alternativo (Alt / Acessibilidade)</label>
+              <label className="font-bold text-ink block mb-1.5">Texto Alternativo (Alt / Acessibilidade)</label>
               <input
                 type="text"
                 value={block.data.alt || ""}
@@ -174,12 +173,12 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     data: { ...block.data, alt: e.target.value },
                   })
                 }
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Legenda Exibida</label>
+              <label className="font-bold text-ink block mb-1.5">Legenda Exibida</label>
               <input
                 type="text"
                 value={block.data.caption || ""}
@@ -189,13 +188,13 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     data: { ...block.data, caption: e.target.value },
                   })
                 }
-                placeholder="Ex: Figura 1. Esquema da célula"
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                placeholder="Ex: Figura 1. Esquema ilustrativo"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
 
-            <div className="pt-2 border-t border-slate-100 space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+            <div className="pt-2 border-t border-border space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer font-semibold text-ink">
                 <input
                   type="checkbox"
                   checked={block.data.enableZoom ?? true}
@@ -211,7 +210,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
               </label>
 
               <div>
-                <label className="font-bold text-slate-800 block mb-1.5">
+                <label className="font-bold text-ink block mb-1.5">
                   <span className="flex items-center gap-1">
                     <IconLink className="w-3.5 h-3.5 text-brand-red" />
                     Link Externo (Opcional)
@@ -227,11 +226,8 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     })
                   }
                   placeholder="https://exemplo.org.br"
-                  className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                  className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Se preenchido, a imagem abrirá este link ao ser clicada.
-                </p>
               </div>
             </div>
           </div>
@@ -241,7 +237,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "accordion" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Título da Seção de Sanfonas</label>
+              <label className="font-bold text-ink block mb-1.5">Título da Seção de Sanfonas</label>
               <input
                 type="text"
                 value={block.data.title || ""}
@@ -252,13 +248,13 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 placeholder="Ex: Tópicos de Estudo"
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="font-bold text-slate-800">Itens Expansíveis</label>
+                <label className="font-bold text-ink">Itens Expansíveis</label>
                 <button
                   onClick={() => {
                     const newItems = [
@@ -284,9 +280,9 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
 
               <div className="space-y-2">
                 {(block.data.items || []).map((item, idx) => (
-                  <div key={item.id} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2">
+                  <div key={item.id} className="p-2.5 rounded-lg border border-border bg-surface-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-600 text-[11px]">Item {idx + 1}</span>
+                      <span className="font-bold text-ink text-[11px]">Item {idx + 1}</span>
                       <button
                         onClick={() => {
                           const newItems = block.data.items.filter((_, i) => i !== idx);
@@ -295,7 +291,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                             data: { ...block.data, items: newItems },
                           });
                         }}
-                        className="text-red-500 hover:text-red-700 p-0.5"
+                        className="text-muted hover:text-brand-red p-0.5"
                       >
                         <IconTrash className="w-3 h-3" />
                       </button>
@@ -312,7 +308,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                         });
                       }}
                       placeholder="Título da sanfona"
-                      className="w-full p-1.5 rounded border border-slate-200 bg-white text-xs"
+                      className="w-full p-1.5 rounded border border-border bg-surface text-ink text-xs"
                     />
                     <textarea
                       value={item.contentHtml}
@@ -326,7 +322,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                       }}
                       rows={2}
                       placeholder="Conteúdo que abre na sanfona"
-                      className="w-full p-1.5 rounded border border-slate-200 bg-white text-xs"
+                      className="w-full p-1.5 rounded border border-border bg-surface text-ink text-xs"
                     />
                   </div>
                 ))}
@@ -339,13 +335,13 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "callout" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Tipo de Destaque</label>
+              <label className="font-bold text-ink block mb-1.5">Tipo de Destaque</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: "tip", label: "💡 Dica", color: "border-green-400 bg-green-50 text-green-800" },
-                  { id: "info", label: "ℹ️ Informação", color: "border-blue-400 bg-blue-50 text-blue-800" },
-                  { id: "warning", label: "⚠️ Atenção", color: "border-amber-400 bg-amber-50 text-amber-800" },
-                  { id: "curiosity", label: "🔍 Curiosidade", color: "border-purple-400 bg-purple-50 text-purple-800" },
+                  { id: "tip", label: "💡 Dica", color: "border-green-500 bg-green-500/10 text-ink" },
+                  { id: "info", label: "ℹ️ Informação", color: "border-blue-500 bg-blue-500/10 text-ink" },
+                  { id: "warning", label: "⚠️ Atenção", color: "border-amber-500 bg-amber-500/10 text-ink" },
+                  { id: "curiosity", label: "🔍 Curiosidade", color: "border-purple-500 bg-purple-500/10 text-ink" },
                 ].map((v) => (
                   <button
                     key={v.id}
@@ -358,8 +354,8 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     }
                     className={`py-2 px-3 rounded-lg border font-bold text-left transition ${
                       block.data.variant === v.id
-                        ? `${v.color} ring-2 ring-slate-800 ring-offset-1`
-                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                        ? `${v.color} ring-2 ring-brand-red ring-offset-1`
+                        : "bg-surface-3 border-border text-muted hover:text-ink"
                     }`}
                   >
                     {v.label}
@@ -369,7 +365,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Título do Destaque</label>
+              <label className="font-bold text-ink block mb-1.5">Título do Destaque</label>
               <input
                 type="text"
                 value={block.data.title || ""}
@@ -379,12 +375,12 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     data: { ...block.data, title: e.target.value },
                   })
                 }
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Conteúdo</label>
+              <label className="font-bold text-ink block mb-1.5">Conteúdo</label>
               <textarea
                 value={block.data.contentHtml}
                 onChange={(e) =>
@@ -394,7 +390,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 rows={4}
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs leading-relaxed"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs leading-relaxed"
               />
             </div>
           </div>
@@ -404,7 +400,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "quiz" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Pergunta do Quiz</label>
+              <label className="font-bold text-ink block mb-1.5">Pergunta do Quiz</label>
               <textarea
                 value={block.data.question}
                 onChange={(e) =>
@@ -414,14 +410,14 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 rows={3}
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs font-semibold"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs font-semibold"
                 placeholder="Digite a pergunta para o estudante..."
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="font-bold text-slate-800">
+                <label className="font-bold text-ink">
                   Alternativas (Marque a Correta)
                 </label>
                 <button
@@ -451,8 +447,8 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     key={opt.id}
                     className={`p-2 rounded-lg border flex items-center gap-2 transition ${
                       opt.isCorrect
-                        ? "bg-green-50 border-green-300"
-                        : "bg-slate-50 border-slate-200"
+                        ? "bg-emerald-500/10 border-emerald-500 text-ink"
+                        : "bg-surface-3 border-border text-ink"
                     }`}
                   >
                     <input
@@ -470,7 +466,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                         });
                       }}
                       title="Marcar como resposta correta"
-                      className="w-4 h-4 text-green-600 focus:ring-green-500 cursor-pointer"
+                      className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                     />
                     <input
                       type="text"
@@ -483,7 +479,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                           data: { ...block.data, options: newOpts },
                         });
                       }}
-                      className="flex-1 p-1 bg-white border border-slate-200 rounded text-xs"
+                      className="flex-1 p-1 bg-surface border border-border rounded text-xs text-ink"
                     />
                     {block.data.options.length > 2 && (
                       <button
@@ -494,7 +490,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                             data: { ...block.data, options: newOpts },
                           });
                         }}
-                        className="text-slate-400 hover:text-red-500 p-1"
+                        className="text-muted hover:text-brand-red p-1"
                       >
                         <IconTrash className="w-3.5 h-3.5" />
                       </button>
@@ -505,7 +501,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">
+              <label className="font-bold text-ink block mb-1.5">
                 Explicação / Feedback Pedagógico
               </label>
               <textarea
@@ -518,7 +514,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                 }
                 rows={3}
                 placeholder="Ex: Esta resposta está correta porque..."
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
           </div>
@@ -528,7 +524,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
         {block.type === "video" && (
           <div className="space-y-4">
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Origem do Vídeo</label>
+              <label className="font-bold text-ink block mb-1.5">Origem do Vídeo</label>
               <div className="grid grid-cols-2 gap-2">
                 {["youtube", "local"].map((src) => (
                   <button
@@ -543,7 +539,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     className={`py-2 text-center rounded-lg border font-bold capitalize transition ${
                       block.data.source === src
                         ? "bg-brand-red text-white border-brand-red"
-                        : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                        : "bg-surface-3 border-border text-muted hover:text-ink"
                     }`}
                   >
                     {src}
@@ -553,7 +549,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">URL do Vídeo</label>
+              <label className="font-bold text-ink block mb-1.5">URL do Vídeo</label>
               <input
                 type="url"
                 value={block.data.url}
@@ -564,12 +560,12 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                   })
                 }
                 placeholder="https://www.youtube.com/watch?v=..."
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
 
             <div>
-              <label className="font-bold text-slate-800 block mb-1.5">Título / Legenda</label>
+              <label className="font-bold text-ink block mb-1.5">Título / Legenda</label>
               <input
                 type="text"
                 value={block.data.title || ""}
@@ -579,7 +575,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
                     data: { ...block.data, title: e.target.value },
                   })
                 }
-                className="w-full p-2 rounded-lg border border-slate-200 focus:border-brand-red focus:outline-none text-xs"
+                className="w-full p-2 rounded-lg border border-border bg-surface text-ink focus:border-brand-red focus:outline-none text-xs"
               />
             </div>
           </div>

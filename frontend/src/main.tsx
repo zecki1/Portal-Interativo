@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { ToastProvider } from "./lib/toast";
 import App from "./App";
 import { aplicarNaRaiz, lerConfig } from "./lib/a11y/config";
 import "./styles/index.css";
@@ -13,7 +14,9 @@ aplicarNaRaiz(lerConfig());
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

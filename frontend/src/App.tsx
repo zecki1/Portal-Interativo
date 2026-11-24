@@ -14,6 +14,7 @@ import {
   type Tema,
 } from "./lib/a11y/config";
 import { AccessibilityMenu } from "./components/a11y/AccessibilityMenu";
+import { ToastProvider } from "./lib/toast";
 
 export default function App() {
   const [authed, setAuthed] = useState(isAuthenticated());
