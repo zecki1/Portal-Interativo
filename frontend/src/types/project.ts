@@ -1,3 +1,5 @@
+import type { ProjectTheme } from "../lib/theme";
+
 export type BlockType =
   // Conteúdo básico
   | "heading"
@@ -359,12 +361,23 @@ export type Block =
   | WordSearchBlock
   | CrosswordBlock;
 
+export type PageRole =
+  | "conteudo"
+  | "capa"
+  | "subcapa"
+  | "atividade"
+  | "encerramento"
+  | "creditos"
+  | "sumario";
+
 export interface ProjectPage {
   id: string;
   pageNumber: number;
   title: string;
   width?: number;
   height?: number;
+  /** Papel visual da página no material publicado. */
+  role?: PageRole;
   blocks: Block[];
 }
 
@@ -391,11 +404,8 @@ export interface ProjectDocument {
   sourceFormat: "PDF" | "IDML" | "MANUAL";
   createdAt: string;
   updatedAt: string;
-  theme: {
-    primaryColor: string;
-    fontFamily: string;
-    mode: "light" | "dark" | "high-contrast";
-  };
+  /** Tema do projeto: preset da biblioteca + overrides + CSS livre. */
+  theme: ProjectTheme;
   assets: ProjectAsset[];
   pages: ProjectPage[];
   /** Idioma do conteúdo publicado (atributo `lang` do HTML). */

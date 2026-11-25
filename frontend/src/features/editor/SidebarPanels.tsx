@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
-import type { ProjectDocument, BlockType } from "../../types/project";
+import type { ProjectDocument, BlockType, PageRole } from "../../types/project";
+import { ROLE_LABELS } from "../../lib/theme";
 import {
   IconLayers,
   IconGrid,
@@ -34,12 +35,13 @@ import {
   LuCaseSensitive,
   LuLayoutGrid,
   LuArrowDownToLine,
+  LuPalette,
 } from "react-icons/lu";
 
 interface SidebarPanelsProps {
   doc: ProjectDocument;
-  activeTab: "pages" | "blocks" | "media";
-  setActiveTab: (tab: "pages" | "blocks" | "media") => void;
+  activeTab: "pages" | "blocks" | "theme" | "media";
+  setActiveTab: (tab: "pages" | "blocks" | "theme" | "media") => void;
   activePageIndex: number;
   setActivePageIndex: (index: number) => void;
   onAddPage: () => void;
@@ -51,6 +53,9 @@ interface SidebarPanelsProps {
   onUploadAsset: (file: File) => void;
   selectedBlockId: string | null;
   onReplaceImageInSelectedBlock?: (src: string, alt: string) => void;
+  onUpdatePageRole: (index: number, role: PageRole) => void;
+  /** Painel de tema já montado (evita duplicar estado entre editor e lateral). */
+  themePanel?: React.ReactNode;
   apiBase: string;
 }
 
@@ -68,6 +73,8 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
   onUploadAsset,
   selectedBlockId,
   onReplaceImageInSelectedBlock,
+  onUpdatePageRole,
+  themePanel,
   apiBase,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -293,10 +300,11 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
   return (
     <aside className="w-80 max-w-[85vw] shrink-0 bg-surface border-r border-border flex flex-col h-full overflow-hidden select-none transition-colors duration-200">
       {/* Abas Superiores */}
-      <div className="flex border-b border-border bg-surface-3 text-xs font-semibold">
+      <div className="flex border-b border-border bg-surface-3 text-[11px] font-semibold">
         <button
           onClick={() => setActiveTab("pages")}
-          className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition ${
+          aria-pressed={activeTab === "pages"}
+          className={`flex-1 py-2.5 px-1 flex flex-col items-center justify-center gap-0.5 border-b-2 transition ${
             activeTab === "pages"
               ? "border-brand-red text-brand-red font-bold bg-surface"
               : "border-transparent text-muted hover:text-ink"
@@ -307,18 +315,32 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
         </button>
         <button
           onClick={() => setActiveTab("blocks")}
-          className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition ${
+          aria-pressed={activeTab === "blocks"}
+          className={`flex-1 py-2.5 px-1 flex flex-col items-center justify-center gap-0.5 border-b-2 transition ${
             activeTab === "blocks"
               ? "border-brand-red text-brand-red font-bold bg-surface"
               : "border-transparent text-muted hover:text-ink"
           }`}
         >
           <IconGrid className="w-4 h-4" />
-          <span>+ Blocos</span>
+          <span>Blocos</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("theme")}
+          aria-pressed={activeTab === "theme"}
+          className={`flex-1 py-2.5 px-1 flex flex-col items-center justify-center gap-0.5 border-b-2 transition ${
+            activeTab === "theme"
+              ? "border-brand-red text-brand-red font-bold bg-surface"
+              : "border-transparent text-muted hover:text-ink"
+          }`}
+        >
+          <LuPalette className="w-4 h-4" aria-hidden="true" />
+          <span>Tema</span>
         </button>
         <button
           onClick={() => setActiveTab("media")}
-          className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition ${
+          aria-pressed={activeTab === "media"}
+          className={`flex-1 py-2.5 px-1 flex flex-col items-center justify-center gap-0.5 border-b-2 transition ${
             activeTab === "media"
               ? "border-brand-red text-brand-red font-bold bg-surface"
               : "border-transparent text-muted hover:text-ink"
@@ -380,6 +402,9 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
                         </p>
                         <p className="text-[10px] text-muted">
                           {p.blocks.length} {p.blocks.length === 1 ? "bloco" : "blocos"}
+                          {p.role && p.role !== "conteudo" && (
+                            <span className="ml-1 font-bold text-brand-red">· {ROLE_LABELS[p.role]}</span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -423,6 +448,29 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
                         </button>
                       )}
                     </div>
+
+                    {isActive && (
+                      <label
+                        className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted shrink-0">
+                          Papel
+                        </span>
+                        <select
+                          value={p.role || "conteudo"}
+                          onChange={(e) => onUpdatePageRole(idx, e.target.value as PageRole)}
+                          aria-label={`Papel da página ${p.pageNumber}`}
+                          className="flex-1 min-w-0 rounded-md border border-border bg-surface px-1.5 py-1 text-[10px] font-bold text-ink focus:border-brand-red focus:outline-none"
+                        >
+                          {Object.entries(ROLE_LABELS).map(([value, text]) => (
+                            <option key={value} value={value}>
+                              {text}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                 );
               })}
@@ -467,6 +515,9 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
             </div>
           </div>
         )}
+
+        {/* ABA: TEMA / APARÊNCIA */}
+        {activeTab === "theme" && themePanel}
 
         {/* ABA: MÍDIAS EXTRAÍDAS */}
         {activeTab === "media" && (

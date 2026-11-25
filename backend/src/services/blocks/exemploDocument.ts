@@ -58,8 +58,13 @@ export type ExemploAsset = { fileName: string; content: string };
 
 const id = () => randomUUID();
 
-function page(pageNumber: number, title: string, blocks: Block[]): ProjectPage {
-  return { id: id(), pageNumber, title, blocks };
+function page(
+  pageNumber: number,
+  title: string,
+  blocks: Block[],
+  role: ProjectPage["role"] = "conteudo"
+): ProjectPage {
+  return { id: id(), pageNumber, title, role, blocks };
 }
 
 function block(b: Record<string, unknown>): Block {
@@ -195,7 +200,7 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
         ],
       },
     }),
-  ]);
+  ], "capa");
 
   const conteudo = page(2, "Conteúdo e mídia", [
     block({ type: "heading", data: { level: 2, text: "Recursos de leitura (H2)" } }),
@@ -433,7 +438,66 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
         ],
       },
     }),
-  ]);
+  ], "atividade");
+
+  const subcapa = page(
+    3,
+    "Unidade 2 · Prática",
+    [
+      block({ type: "heading", data: { level: 1, text: "Unidade 2 · Prática" } }),
+      block({
+        type: "paragraph",
+        data: {
+          html: "Esta página usa o papel <strong>subcapa</strong>: serve como divisória de unidade, com faixa de destaque e título ampliado. Troque o papel na lista de páginas para ver o efeito.",
+        },
+      }),
+    ],
+    "subcapa"
+  );
+
+  const encerramento = page(
+    6,
+    "Encerramento",
+    [
+      block({ type: "heading", data: { level: 2, text: "Chegamos ao fim" } }),
+      block({
+        type: "paragraph",
+        data: {
+          html: "Retome as ideias principais, proponha uma ação prática e convide a turma a revisitar os exercícios. O papel <strong>encerramento</strong> aplica um fundo suave e destaca a mensagem final.",
+        },
+      }),
+      block({
+        type: "callout",
+        data: {
+          variant: "vamos-refletir",
+          contentHtml: "<p>O que você aplicaria amanhã, na sua prática, a partir deste material?</p>",
+        },
+      }),
+    ],
+    "encerramento"
+  );
+
+  const creditos = page(
+    7,
+    "Créditos e referências",
+    [
+      block({ type: "heading", data: { level: 2, text: "Créditos" } }),
+      block({
+        type: "paragraph",
+        data: {
+          html: "<p><strong>Conteúdo e revisão:</strong> equipe pedagógica SESI.<br/><strong>Design instrucional:</strong> Núcleo de Produção de Materiais.<br/><strong>Ilustrações:</strong> acervo próprio (SVG demonstrativos).</p>",
+        },
+      }),
+      block({ type: "heading", data: { level: 3, text: "Referências" } }),
+      block({
+        type: "paragraph",
+        data: {
+          html: "<p>BRASIL. Ministério do Meio Ambiente. <em>Biomas brasileiros</em>. Brasília, 2024.<br/>SENAI. <em>Coleção de materiais didáticos interativos</em>. 2026.</p>",
+        },
+      }),
+    ],
+    "creditos"
+  );
 
   return {
     id: projectId,
@@ -443,9 +507,9 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
     createdAt: agora,
     updatedAt: agora,
     theme: {
-      primaryColor: "#d42731",
-      fontFamily: "system-ui, -apple-system, sans-serif",
+      themeId: "sesi",
       mode: "light",
+      overrides: {},
     },
     assets: Object.keys(assets).map((fileName, i) => ({
       id: `exemplo-asset-${i + 1}`,
@@ -454,7 +518,10 @@ export function buildExemploDocument(projectId: string): ProjectDocument {
       mimeType: "image/svg+xml",
       altText: fileName.replace(/^exemplo-|\.svg$/g, "").replace(/-/g, " "),
     })),
-    pages: [capa, conteudo, exercicios].map((p, i) => ({ ...p, pageNumber: i + 1 })),
+    pages: [capa, subcapa, conteudo, exercicios, encerramento, creditos].map((p, i) => ({
+      ...p,
+      pageNumber: i + 1,
+    })),
   };
 }
 

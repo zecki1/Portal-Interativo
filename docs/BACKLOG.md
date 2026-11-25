@@ -105,3 +105,42 @@ Trazidos do ProjetoX para o editor (`frontend/src/features/editor/ProjxBlockPrev
 - [ ] Seções/âncoras (`Section`/`Topic`) — hoje coberto por Títulos + sumário do build
 - [ ] ImageZoomDownload (baixar imagem) — o zoom já existe no bloco de imagem
 PY
+## Temas e aparência (2026-11-25)
+
+Biblioteca global de temas (`backend/data/themes/`) + painel **Tema** no editor.
+Um tema é um conjunto de tokens + CSS livre; o projeto guarda `themeId`,
+`overrides` (ajustes só do material), `mode` e `customCss`.
+
+**Presets embutidos** (não excluíveis, duplicáveis): Sesi, Editora, Noturno,
+Alto Contraste, Lúdico.
+
+**O que dá para personalizar**
+- Cores: destaque, apoio, fundos (página/cartão/menu), texto, texto suave,
+  bordas, links, marca-texto.
+- Leitura: fonte do corpo e dos títulos, tamanho base, escala dos títulos,
+  entrelinha, espaço entre parágrafos e entre blocos, largura da coluna,
+  alinhamento (esquerda/justificado).
+- Títulos: peso, caixa alta, marca do H2 (barra/sublinhado/nenhuma).
+- Estilo visual: Cartão, Flat, Editorial, Lúdico, Técnico, Minimalista.
+- Forma: raio, espessura da borda, sombra, densidade, separador entre blocos.
+- Fundo: sólido, gradiente (CSS) ou padrão (grade/pontos/diagonal).
+- Componentes: estilo das caixas, botões e moldura de imagem.
+- Modo de abertura: claro, escuro ou alto contraste (o leitor ainda alterna).
+- CSS livre do projeto, aplicado por último no build.
+
+**Papéis de página** (`page.role`): conteúdo, capa, subcapa, atividade,
+encerramento, créditos, sumário — cada um com tratamento CSS próprio.
+
+**Entregas**
+- [x] `services/themes.ts`: tipos, 5 presets, CRUD em arquivo, resolução do
+      tema do projeto (com migração de `primaryColor`/`fontFamily`),
+      sanitização de CSS e geração de `buildThemeCss`.
+- [x] `GET/POST/PUT/DELETE /api/v1/themes` + `POST /themes/:id/duplicate`.
+- [x] Build aplica tokens → blocos → papéis → CSS do tema/CSS livre;
+      `html[data-style]` e `<article class="book-page role-*">`.
+- [x] Aba **Tema** no editor: biblioteca com mini-preview, criar, duplicar,
+      renomear, excluir, salvar ajustes, restaurar, avisos de contraste AA.
+- [x] Preview ao vivo no canvas via CSS vars escopadas na folha.
+- [x] Material de exemplo com capa, subcapa, atividade, encerramento e créditos.
+- [ ] Exportar/importar tema em `.json`.
+- [ ] Testes automatizados de contraste/sanitizer e Playwright visual dos presets.

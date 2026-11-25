@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import type { ProjectPage, Block, BlockType } from "../../types/project";
+import type { ProjectPage, Block, BlockType, PageRole } from "../../types/project";
+import { ROLE_LABELS, shade, withAlpha, type ThemeTokens, type ThemeMode } from "../../lib/theme";
 import { ProjxBlockPreview, isProjxBlock } from "./ProjxBlockPreview";
 import { blockLabel } from "../../lib/blockLabels";
 import {
@@ -43,6 +44,9 @@ interface BlockCanvasProps {
   onDeleteBlock: (blockId: string) => void;
   onUpdateBlock: (block: Block) => void;
   onInsertBlockAt: (index: number, type: BlockType) => void;
+  onUpdatePage: (patch: Partial<ProjectPage>) => void;
+  tokens: ThemeTokens;
+  mode: ThemeMode;
   apiBase: string;
   projectId: string;
 }
@@ -56,11 +60,44 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
   onDeleteBlock,
   onUpdateBlock,
   onInsertBlockAt,
+  onUpdatePage,
+  tokens,
+  mode,
   apiBase,
   projectId,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const role: PageRole = page.role || "conteudo";
+
+  // Preview ao vivo: os tokens viram CSS vars no escopo da folha.
+  const themeVars = {
+    "--brand-red": tokens.primary,
+    "--brand-red-dark": shade(tokens.primary, -14),
+    "--brand-red-hover": shade(tokens.primary, -14),
+    "--surface": tokens.bgSurface,
+    "--surface-2": tokens.bgPage,
+    "--surface-3": withAlpha(tokens.textMain, 0.05),
+    "--border": tokens.border,
+    "--text": tokens.textMain,
+    "--muted": tokens.textMuted,
+    fontFamily: tokens.fontBody,
+    borderRadius: `${tokens.radius + 6}px`,
+    borderWidth: `${tokens.borderWidth}px`,
+  } as React.CSSProperties;
+
+  const previewCss = `
+    .pi-sheet { background-color: ${tokens.bgSurface}; color: ${tokens.textMain}; }
+    .pi-sheet p, .pi-sheet li, .pi-sheet .pi-rich { line-height: ${tokens.lineHeight}; text-align: ${tokens.textAlign}; }
+    .pi-sheet p + p { margin-top: ${tokens.paragraphSpacing}px; }
+    .pi-sheet h1, .pi-sheet h2, .pi-sheet h3 { font-family: ${tokens.fontHeading}; text-transform: ${tokens.headingTransform}; font-weight: ${tokens.headingWeight}; }
+    .pi-sheet .pi-block + .pi-block { margin-top: ${Math.max(0, tokens.blockSpacing - 16)}px; }
+    .pi-sheet.role-capa { display: flex; flex-direction: column; justify-content: center; min-height: 380px; text-align: center; }
+    .pi-sheet.role-subcapa { border-left: 10px solid ${tokens.primary}; }
+    .pi-sheet.role-atividade { box-shadow: inset 6px 0 0 ${tokens.primary}; }
+    .pi-sheet.role-encerramento { background: ${withAlpha(tokens.primary, 0.06)}; }
+    .pi-sheet.role-creditos { background: ${withAlpha(tokens.textMain, 0.03)}; }
+  `;
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -92,8 +129,13 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-surface-2 p-3 sm:p-6 flex flex-col items-center transition-colors duration-200">
+      <style>{previewCss}</style>
       {/* Folha / Página do Livro */}
-      <div className="w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-4 sm:p-10 mb-12 flex flex-col min-w-0 transition-colors duration-200">
+      <div
+        className={`pi-sheet role-${role} w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-4 sm:p-10 mb-12 flex flex-col min-w-0 transition-colors duration-200`}
+        style={themeVars}
+        data-mode={mode}
+      >
         {/* Cabeçalho da Página */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-border mb-6 sm:mb-8">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -103,16 +145,32 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
             <input
               type="text"
               value={page.title || ""}
-              onChange={(e) => {
-                page.title = e.target.value;
-              }}
+              onChange={(e) => onUpdatePage({ title: e.target.value })}
               placeholder="Título da página ou seção"
               className="w-full min-w-0 flex-1 text-base sm:text-lg font-bold text-ink bg-transparent hover:bg-surface-3 focus:bg-surface px-2 py-1 rounded border border-transparent hover:border-border focus:border-brand-red outline-none transition"
             />
           </div>
-          <span className="text-xs font-semibold text-muted shrink-0">
-            {page.blocks.length} {page.blocks.length === 1 ? "bloco" : "blocos"}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <label className="flex items-center gap-1">
+              <span className="sr-only">Papel da página</span>
+              <select
+                value={role}
+                onChange={(e) => onUpdatePage({ role: e.target.value as PageRole })}
+                aria-label="Papel da página"
+                title="Papel da página no material publicado"
+                className="rounded-lg border border-border bg-surface px-1.5 py-1 text-[10px] font-bold text-ink hover:bg-surface-3 focus:border-brand-red focus:outline-none"
+              >
+                {Object.entries(ROLE_LABELS).map(([value, text]) => (
+                  <option key={value} value={value}>
+                    {text}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-xs font-semibold text-muted">
+              {page.blocks.length} {page.blocks.length === 1 ? "bloco" : "blocos"}
+            </span>
+          </div>
         </div>
 
         {/* Lista de Blocos */}
@@ -156,7 +214,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
               const isDragTarget = dragOverIndex === idx;
 
               return (
-                <div key={block.id} className="relative group">
+                <div key={block.id} className="relative group pi-block">
                   {/* Divisor de inserção rápida */}
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 -my-2 py-1 flex items-center justify-center relative z-20">
                     <button

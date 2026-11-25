@@ -5,6 +5,7 @@ import { resourceRoutes } from "./resources.js";
 import { analyticsRoutes } from "./analytics.js";
 import { supportRoutes } from "./support.js";
 import { convertRoutes } from "./convert.js";
+import { themeRoutes } from "./themes.js";
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => ({ status: "ok" }));
@@ -13,4 +14,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(analyticsRoutes, { prefix: "/api/v1" });
   await app.register(supportRoutes, { prefix: "/api/v1" });
   await app.register(convertRoutes, { prefix: "/api/v1" });
+  await app.register(themeRoutes, { prefix: "/api/v1" });
 }

@@ -10,6 +10,13 @@ import { importIdml } from "./idml/importIdml.js";
 import { renderProjxBlock, PROJX_CSS, PROJX_JS } from "./blocks/projxBlocks.js";
 import { svgIcon, ICON_CSS } from "./blocks/icons.js";
 import { buildExemploDocument, exemploAssets } from "./blocks/exemploDocument.js";
+import {
+  resolveThemeForProject,
+  buildThemeCss,
+  sanitizeCss,
+  type PageRole,
+  type ProjectThemeInput,
+} from "./themes.js";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
@@ -334,6 +341,8 @@ export interface ProjectPage {
   title: string;
   width?: number;
   height?: number;
+  /** Papel visual da página (capa, subcapa, encerramento, créditos…). */
+  role?: PageRole;
   blocks: Block[];
 }
 
@@ -343,11 +352,12 @@ export interface ProjectDocument {
   sourceFormat: "PDF" | "IDML" | "MANUAL";
   createdAt: string;
   updatedAt: string;
-  theme: {
-    primaryColor: string;
-    fontFamily: string;
-    mode: "light" | "dark" | "high-contrast";
-  };
+  /**
+   * Tema do projeto: preset da biblioteca (`themeId`) + ajustes próprios
+   * (`overrides`) + CSS livre (`customCss`). Os campos `primaryColor` e
+   * `fontFamily` mantêm compatibilidade com projetos antigos.
+   */
+  theme: ProjectThemeInput;
   assets: ProjectAsset[];
   pages: ProjectPage[];
   /** Idioma do conteúdo publicado (atributo `lang` do HTML). Padrão: pt-BR. */
@@ -840,8 +850,8 @@ export async function saveProjectDocument(doc: ProjectDocument): Promise<void> {
   await fs.writeFile(path.join(projectDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
 
   // Gerar arquivos estáticos web (index.html, styles.css, script.js)
-  const html = buildHtmlFromDoc(doc);
-  const css = buildCssFromDoc(doc);
+  const html = await buildHtmlFromDoc(doc);
+  const css = await buildCssFromDoc(doc);
   const js = buildJsFromDoc();
 
   await fs.writeFile(path.join(projectDir, "index.html"), html, "utf8");
@@ -953,8 +963,8 @@ export async function restoreProjectVersion(id: string, versionId: string): Prom
   await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify(restored, null, 2), "utf8");
   const meta = getProjectMeta(restored);
   await fs.writeFile(path.join(projectDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
-  await fs.writeFile(path.join(projectDir, "index.html"), buildHtmlFromDoc(restored), "utf8");
-  await fs.writeFile(path.join(projectDir, "styles.css"), buildCssFromDoc(restored), "utf8");
+  await fs.writeFile(path.join(projectDir, "index.html"), await buildHtmlFromDoc(restored), "utf8");
+  await fs.writeFile(path.join(projectDir, "styles.css"), await buildCssFromDoc(restored), "utf8");
   await fs.writeFile(path.join(projectDir, "script.js"), buildJsFromDoc(), "utf8");
 
   return restored;
@@ -1038,8 +1048,8 @@ export async function deleteProject(id: string): Promise<void> {
 export async function refreshProjectBuild(id: string): Promise<void> {
   const doc = await getProjectDocument(id);
   const projectDir = path.join(PROJECTS_DIR, id);
-  await fs.writeFile(path.join(projectDir, "index.html"), buildHtmlFromDoc(doc), "utf8");
-  await fs.writeFile(path.join(projectDir, "styles.css"), buildCssFromDoc(doc), "utf8");
+  await fs.writeFile(path.join(projectDir, "index.html"), await buildHtmlFromDoc(doc), "utf8");
+  await fs.writeFile(path.join(projectDir, "styles.css"), await buildCssFromDoc(doc), "utf8");
   await fs.writeFile(path.join(projectDir, "script.js"), buildJsFromDoc(), "utf8");
 }
 
@@ -1113,7 +1123,8 @@ function renderPageContentHtml(doc: ProjectDocument, p: ProjectPage): string {
       ${extraHtml}`;
 }
 
-function buildHtmlFromDoc(doc: ProjectDocument): string {
+async function buildHtmlFromDoc(doc: ProjectDocument): Promise<string> {
+  const theme = await resolveThemeForProject(doc.theme);
   const navItems = doc.pages
     .map(
       (p, i) =>
@@ -1127,7 +1138,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
   const pagesHtml = doc.pages
     .map(
       (p) => `
-    <article id="page-${p.id}" class="book-page${doc.layoutMode === "idml" && p.width ? " is-idml" : ""}">
+    <article id="page-${p.id}" class="book-page role-${escapeHtml(p.role || "conteudo")}${doc.layoutMode === "idml" && p.width ? " is-idml" : ""}">
       <header class="page-header">
         <span class="page-badge">Página ${p.pageNumber}</span>
         <h2 class="page-title">${escapeHtml(p.title || "")}</h2>
@@ -1138,7 +1149,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
     .join("\n");
 
   return `<!DOCTYPE html>
-<html lang="${escapeHtml(doc.locale || "pt-BR")}" data-theme="${doc.theme.mode || "light"}">
+<html lang="${escapeHtml(doc.locale || "pt-BR")}" data-theme="${doc.theme?.mode || theme.mode || "light"}" data-style="${escapeHtml(theme.tokens.visualStyle)}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -1373,8 +1384,10 @@ function extractYoutubeId(url: string): string {
   return m ? m[1] : url;
 }
 
-function buildCssFromDoc(doc: ProjectDocument): string {
-  const brandRed = doc.theme.primaryColor || "#d42731";
+async function buildCssFromDoc(doc: ProjectDocument): Promise<string> {
+  const resolvedTheme = await resolveThemeForProject(doc.theme);
+  const themeCss = buildThemeCss(resolvedTheme);
+  const brandRed = resolvedTheme.tokens.primary;
   return `/* CSS Estático e Responsivo — Build Interativo */
 :root {
   --brand-red: ${brandRed};
@@ -1406,7 +1419,7 @@ html, body {
   overflow-x: clip;
 }
 body {
-  font-family: ${doc.theme.fontFamily || "system-ui, -apple-system, sans-serif"};
+  font-family: ${resolvedTheme.tokens.fontBody};
   background-color: var(--bg-page);
   color: var(--text-main);
   line-height: 1.65;
@@ -1905,6 +1918,7 @@ ${ICON_CSS}
   .idml-frame .block-paragraph ol { font-size: 1.02rem; line-height: 1.65; }
 }
 ${PROJX_CSS}
+${themeCss}
 `;
 }
 

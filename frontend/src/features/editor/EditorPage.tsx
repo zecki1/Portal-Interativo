@@ -8,6 +8,8 @@ import { BlockInspector } from "./BlockInspector";
 import { PreviewModal } from "./PreviewModal";
 import { newId } from "../../lib/ids";
 import { useLocale, LOCALES } from "../../lib/i18n";
+import { resolveProjectTheme, type Theme, type ThemeMode, type ThemeTokens } from "../../lib/theme";
+import { ThemePanel } from "./ThemePanel";
 import { LuHistory, LuLayers, LuRotateCcw, LuX } from "react-icons/lu";
 import {
   IconChevronLeft,
@@ -30,7 +32,9 @@ export default function EditorPage() {
   // Estados de navegação do editor
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<"pages" | "blocks" | "media">("pages");
+  const [sidebarTab, setSidebarTab] = useState<"pages" | "blocks" | "theme" | "media">("pages");
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [themesLoading, setThemesLoading] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(() =>
@@ -72,6 +76,21 @@ export default function EditorPage() {
   useEffect(() => {
     loadProject();
   }, [id]);
+
+  const loadThemes = async () => {
+    try {
+      const res = await apiFetch<Theme[]>("/themes");
+      setThemes(res.data || []);
+    } catch {
+      setThemes([]);
+    } finally {
+      setThemesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadThemes();
+  }, []);
 
   // Função para salvar documento
   const saveDocument = async (currentDoc: ProjectDocument) => {
@@ -194,6 +213,86 @@ export default function EditorPage() {
 
       return updated;
     });
+  };
+
+  // Tema e aparência
+  const refreshThemes = async (): Promise<Theme[]> => {
+    const res = await apiFetch<Theme[]>("/themes");
+    const list = res.data || [];
+    setThemes(list);
+    return list;
+  };
+
+  const handleApplyTheme = (themeId: string) => {
+    updateDoc((prev) => ({
+      ...prev,
+      theme: { ...prev.theme, themeId, overrides: {} },
+    }));
+  };
+
+  const handleThemeOverride = (patch: Partial<ThemeTokens>) => {
+    updateDoc((prev) => ({
+      ...prev,
+      theme: { ...prev.theme, overrides: { ...(prev.theme.overrides || {}), ...patch } },
+    }));
+  };
+
+  const handleResetOverrides = () => {
+    updateDoc((prev) => ({ ...prev, theme: { ...prev.theme, overrides: {} } }));
+  };
+
+  const handleCustomCss = (customCss: string) => {
+    updateDoc((prev) => ({ ...prev, theme: { ...prev.theme, customCss } }));
+  };
+
+  const handleThemeMode = (mode: ThemeMode) => {
+    updateDoc((prev) => ({ ...prev, theme: { ...prev.theme, mode } }));
+  };
+
+  const handleCreateTheme = async (name?: string) => {
+    if (!doc) return;
+    const resolved = resolveProjectTheme(doc.theme, themes);
+    const res = await apiFetch<Theme>("/themes", {
+      method: "POST",
+      body: JSON.stringify({ name, basedOn: resolved.theme.id, tokens: resolved.tokens }),
+    });
+    await refreshThemes();
+    if (res.data?.id) handleApplyTheme(res.data.id);
+  };
+
+  const handleDuplicateTheme = async (themeId: string) => {
+    const res = await apiFetch<Theme>(`/themes/${themeId}/duplicate`, { method: "POST" });
+    await refreshThemes();
+    if (res.data?.id) handleApplyTheme(res.data.id);
+  };
+
+  const handleRenameTheme = async (themeId: string, name: string) => {
+    await apiFetch(`/themes/${themeId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    });
+    await refreshThemes();
+  };
+
+  const handleDeleteTheme = async (themeId: string) => {
+    await apiFetch(`/themes/${themeId}`, { method: "DELETE" });
+    const list = await refreshThemes();
+    if (doc?.theme.themeId === themeId) {
+      const fallback = list.find((t) => t.builtin)?.id || "sesi";
+      handleApplyTheme(fallback);
+    }
+  };
+
+  const handleSaveThemeChanges = async () => {
+    if (!doc) return;
+    const resolved = resolveProjectTheme(doc.theme, themes);
+    if (resolved.theme.builtin) return;
+    await apiFetch(`/themes/${resolved.theme.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ tokens: resolved.tokens }),
+    });
+    await refreshThemes();
+    handleResetOverrides();
   };
 
   // Gerenciamento de Páginas
@@ -356,6 +455,14 @@ export default function EditorPage() {
     });
   };
 
+  /** Atualiza título/papel da página ativa (usado pelo canvas e pela lista). */
+  const handleUpdatePage = (index: number, patch: Partial<ProjectPage>) => {
+    updateDoc((prev) => ({
+      ...prev,
+      pages: prev.pages.map((p, i) => (i === index ? { ...p, ...patch } : p)),
+    }));
+  };
+
   // Upload manual de asset
   const handleUploadAsset = async (file: File) => {
     if (!id) return;
@@ -424,6 +531,8 @@ export default function EditorPage() {
   const activePage = doc.pages[activePageIndex] || doc.pages[0];
   const selectedBlock =
     activePage?.blocks.find((b) => b.id === selectedBlockId) || null;
+
+  const resolvedTheme = resolveProjectTheme(doc.theme, themes);
 
   const hasIdmlGeometry = doc.pages.some((p) => typeof p.width === "number" && p.width > 0);
 
@@ -602,6 +711,26 @@ export default function EditorPage() {
             onUploadAsset={handleUploadAsset}
             selectedBlockId={selectedBlockId}
             onReplaceImageInSelectedBlock={handleReplaceImageInSelectedBlock}
+            onUpdatePageRole={(index, role) => handleUpdatePage(index, { role })}
+            themePanel={
+              <ThemePanel
+                doc={doc}
+                themes={themes}
+                loading={themesLoading}
+                activeTheme={resolvedTheme.theme}
+                tokens={resolvedTheme.tokens}
+                onApplyTheme={handleApplyTheme}
+                onOverride={handleThemeOverride}
+                onResetOverrides={handleResetOverrides}
+                onCustomCss={handleCustomCss}
+                onMode={handleThemeMode}
+                onCreateTheme={handleCreateTheme}
+                onDuplicateTheme={handleDuplicateTheme}
+                onRenameTheme={handleRenameTheme}
+                onDeleteTheme={handleDeleteTheme}
+                onSaveTheme={handleSaveThemeChanges}
+              />
+            }
             apiBase={apiBase}
           />
         </div>
@@ -619,6 +748,9 @@ export default function EditorPage() {
           onDeleteBlock={handleDeleteBlock}
           onUpdateBlock={handleUpdateBlock}
           onInsertBlockAt={handleInsertBlockAt}
+          onUpdatePage={(patch) => handleUpdatePage(activePageIndex, patch)}
+          tokens={resolvedTheme.tokens}
+          mode={resolvedTheme.mode}
           apiBase={apiBase}
           projectId={doc.id}
         />
