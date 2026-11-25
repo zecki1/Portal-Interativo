@@ -44,6 +44,7 @@ interface Bounds {
 interface PageRect extends Bounds {
   self: string;
   name: string;
+  appliedMaster?: string;
 }
 
 interface PageItem {
@@ -51,16 +52,25 @@ interface PageItem {
   self: string;
   story?: string;
   link?: string;
+  fillColor?: string;
+  fillTint?: number;
   bounds: Bounds;
 }
 
 type ParagraphRole = "body" | "heading2" | "heading3" | "caption" | "credit" | "alt" | "skip";
+
+interface StoryTable {
+  headers: string[];
+  rows: string[][];
+  caption?: string;
+}
 
 interface StoryParagraph {
   html: string;
   text: string;
   styleKey: string;
   role: ParagraphRole;
+  table?: StoryTable;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -253,7 +263,44 @@ interface InlineResult {
   html: string;
 }
 
-function renderInline(nodes: any[], depth = 0): InlineResult {
+interface InlineContext {
+  hyperlinks: Map<string, string>;
+}
+
+function sanitizeUrl(raw?: string): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+  return null;
+}
+
+/** Converte polígono/seta inline (ex.: fluxos de passos em ID542) em seta unicode legível. */
+function inlineShapeSymbol(node: any): string {
+  const pts = collectTag(node, "PathPointType")
+    .map((p) => {
+      const [px, py] = String(attrsOf(p).Anchor || "").trim().split(/\s+/).map(Number);
+      return Number.isNaN(px) || Number.isNaN(py) ? null : { x: px, y: py };
+    })
+    .filter((p): p is { x: number; y: number } => p !== null);
+  if (pts.length >= 3) {
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const w = Math.max(...xs) - Math.min(...xs);
+    const h = Math.max(...ys) - Math.min(...ys);
+    if (w >= h) {
+      const avgX = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+      return avgX >= midX ? " → " : " ← ";
+    }
+    const avgY = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
+    return avgY >= midY ? " ↓ " : " ↑ ";
+  }
+  return " → ";
+}
+
+function renderInline(nodes: any[], ctx: InlineContext, depth = 0): InlineResult {
   let text = "";
   let html = "";
   for (const node of nodes) {
@@ -261,20 +308,38 @@ function renderInline(nodes: any[], depth = 0): InlineResult {
     if (!tag || tag === "#text") continue;
 
     if (tag === "Content") {
-      const value = textOf(node);
+      const rawValue = textOf(node);
+      // U+2028 (Line Separator) e U+2029 (Paragraph Separator) usados pelo InDesign
+      const value = rawValue.replace(/[\u2028\u2029]/g, "\n");
       // Frases em runs separados sem <Br/>: restaura o espaço após pontuação
       // final (ex.: "...blocos de montar." + "Na seção STEAM...").
       if (/[.!?;:]\s*$/.test(text) && /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(value)) {
         text += " ";
         html += " ";
       }
-      text += value;
-      html += escapeHtml(value);
+      text += value.replace(/\n+/g, " ");
+      html += escapeHtml(value).replace(/\n/g, "<br/>");
       continue;
     }
     if (tag === "Br") {
       text += "\n";
       html += "<br/>";
+      continue;
+    }
+    if (tag === "HyperlinkTextSource") {
+      const self = attrsOf(node).Self;
+      const inner = renderInline(kidsOf(node), ctx, depth + 1);
+      const url = sanitizeUrl(self ? ctx.hyperlinks.get(self) : undefined);
+      text += inner.text;
+      html += url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${inner.html}</a>`
+        : inner.html;
+      continue;
+    }
+    if (tag === "Polygon" || tag === "GraphicLine") {
+      const sym = inlineShapeSymbol(node);
+      text += sym;
+      html += escapeHtml(sym);
       continue;
     }
     if (tag === "CharacterStyleRange") {
@@ -284,21 +349,86 @@ function renderInline(nodes: any[], depth = 0): InlineResult {
         /negrito|bold|peso/i.test(styleKeyOf(a.AppliedCharacterStyle));
       const italic =
         /italic|oblique/i.test(a.FontStyle || "") || /italico|italic/i.test(styleKeyOf(a.AppliedCharacterStyle));
-      const inner = renderInline(kidsOf(node), depth + 1);
+      const inner = renderInline(kidsOf(node), ctx, depth + 1);
       text += inner.text;
       html += bold ? `<strong>${inner.html}</strong>` : italic ? `<em>${inner.html}</em>` : inner.html;
       continue;
     }
     if (tag === "Table") continue;
-    if (depth > 6) continue;
-    const inner = renderInline(kidsOf(node), depth + 1);
+    if (depth > 8) continue;
+    const inner = renderInline(kidsOf(node), ctx, depth + 1);
     text += inner.text;
     html += inner.html;
   }
   return { text, html };
 }
 
-function parseStoryXML(storyXml: string): StoryParagraph[] {
+function parseTableNode(tableNode: any, ctx: InlineContext): StoryTable | null {
+  const ta = attrsOf(tableNode);
+  const headerRowsCount = parseInt(ta.HeaderRowCount || "0", 10) || 0;
+  const colCount = Math.max(1, parseInt(ta.ColumnCount || "1", 10) || 1);
+  const cells = collectTag(tableNode, "Cell");
+  if (cells.length === 0) return null;
+
+  const grid = new Map<number, string[]>();
+  const INVISIBLE = /[\uFEFF\u200B\u200C\u200D\u2060\u00AD]/g;
+
+  for (const cell of cells) {
+    const ca = attrsOf(cell);
+    const [colRaw, rowRaw] = String(ca.Name || "0:0").split(":");
+    const col = parseInt(colRaw || "0", 10) || 0;
+    const row = parseInt(rowRaw || "0", 10) || 0;
+    const paras = collectTag(cell, "ParagraphStyleRange");
+    const cellParts: string[] = [];
+    for (const p of paras) {
+      const inline = renderInline(kidsOf(p), ctx);
+      const clean = inline.html
+        .replace(INVISIBLE, "")
+        .replace(/<\?ACE\s*\d+\?>/g, "")
+        .replace(/<br\s*\/?>/gi, " ")
+        .trim();
+      if (clean) cellParts.push(clean);
+    }
+    const rowArr = grid.get(row) ?? Array.from({ length: colCount }, () => "");
+    rowArr[col] = cellParts.join(" ");
+    grid.set(row, rowArr);
+  }
+
+  const orderedRows = [...grid.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, r]) => r)
+    .filter((r) => r.some((c) => c.trim().length > 0));
+  if (orderedRows.length === 0) return null;
+
+  if (headerRowsCount > 0 && orderedRows.length > headerRowsCount) {
+    return {
+      headers: orderedRows[0],
+      rows: orderedRows.slice(headerRowsCount),
+    };
+  }
+
+  // Tabelas SESI sem HeaderRow explícito (ex.: código ET-PC09 | descrição)
+  if (colCount === 2 && orderedRows.every((r) => /^[A-Z]{2}-[A-Z0-9]+/i.test(r[0].replace(/<[^>]+>/g, "").trim()))) {
+    return {
+      headers: ["Código", "Habilidade"],
+      rows: orderedRows,
+    };
+  }
+
+  if (orderedRows.length >= 2) {
+    return {
+      headers: orderedRows[0],
+      rows: orderedRows.slice(1),
+    };
+  }
+
+  return {
+    headers: orderedRows[0].map((_, i) => `Coluna ${i + 1}`),
+    rows: orderedRows,
+  };
+}
+
+function parseStoryXML(storyXml: string, ctx: InlineContext): StoryParagraph[] {
   const doc = xml.parse(storyXml);
   const paragraphs: any[] = [];
   const walk = (nodes: any[], depth = 0) => {
@@ -319,8 +449,18 @@ function parseStoryXML(storyXml: string): StoryParagraph[] {
   // Caracteres invisíveis do InDesign (joiner/BOM/zero-width) que "cortam" palavras.
   const INVISIBLE = /[\uFEFF\u200B\u200C\u200D\u2060\u00AD]/g;
   for (const p of paragraphs) {
+    const tables = collectTag(p, "Table");
+    if (tables.length > 0) {
+      for (const tblNode of tables) {
+        const table = parseTableNode(tblNode, ctx);
+        if (table) {
+          result.push({ text: "", html: "", styleKey: "", role: "body", table });
+        }
+      }
+    }
+
     const styleKey = styleKeyOf(attrsOf(p).AppliedParagraphStyle);
-    const inline = renderInline(kidsOf(p));
+    const inline = renderInline(kidsOf(p), ctx);
     const text = inline.text
       .replace(INVISIBLE, "")
       .replace(/<\?ACE\s*\d+\?>/g, "\u0000")
@@ -332,6 +472,14 @@ function parseStoryXML(storyXml: string): StoryParagraph[] {
     if (role === "skip") continue;
 
     let html = inline.html.replace(INVISIBLE, "").replace(/<\?ACE\s*\d+\?>/g, "").trim();
+
+    // Auto-vincula URLs explícitas que não tenham HyperlinkTextSource no XML
+    if (!/<a\s/i.test(html)) {
+      html = html.replace(
+        /\b(https?:\/\/[^\s<>"']+)/gi,
+        (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+      );
+    }
 
     // Estilos de lista do SESI: cada run separado por <Br/> vira um <li>.
     if (/lista_marcador|lista_numerada|lista_alfabetica|lista_marcadores/.test(styleKey)) {
@@ -369,7 +517,12 @@ function readPages(spreadXml: string): PageRect[] {
         if (gb.length === 4 && gb.every((n) => !Number.isNaN(n))) {
           const corners = mergeBounds([{ x1: gb[1], y1: gb[0], x2: gb[3], y2: gb[2] }], parseMatrix(a.ItemTransform));
           if (corners) {
-            pages.push({ ...corners, self: a.Self || "", name: a.Name || "" });
+            pages.push({
+              ...corners,
+              self: a.Self || "",
+              name: a.Name || "",
+              appliedMaster: a.AppliedMaster && a.AppliedMaster !== "n" ? a.AppliedMaster : undefined,
+            });
           }
         }
         continue;
@@ -412,11 +565,14 @@ function readItems(spreadXml: string): PageItem[] {
       const bounds = anchors.length > 0 ? mergeBounds(anchors, local) : null;
       if (!bounds) continue;
 
+      const fillTintRaw = Number(a.FillTint);
       items.push({
         tag,
         self: a.Self || "",
         story: a.ParentStory && a.ParentStory !== "n" ? a.ParentStory : undefined,
         link: findImageLink(node),
+        fillColor: a.FillColor && a.FillColor !== "Swatch/None" ? a.FillColor : undefined,
+        fillTint: !Number.isNaN(fillTintRaw) && fillTintRaw > 0 ? fillTintRaw : undefined,
         bounds,
       });
     }
@@ -424,6 +580,61 @@ function readItems(spreadXml: string): PageItem[] {
 
   walk(doc, IDENTITY);
   return items;
+}
+
+function parseColorMap(graphicXml: string): Map<string, [number, number, number]> {
+  const map = new Map<string, [number, number, number]>();
+  for (const m of graphicXml.matchAll(/<Color\b([^>]*)\/>/g)) {
+    const attrs = m[1];
+    const self = attrs.match(/Self="([^"]+)"/)?.[1];
+    const space = attrs.match(/Space="([^"]+)"/)?.[1];
+    const valRaw = attrs.match(/ColorValue="([^"]+)"/)?.[1];
+    if (!self || !valRaw) continue;
+    const nums = valRaw.trim().split(/\s+/).map(Number);
+    if (nums.some((n) => Number.isNaN(n))) continue;
+    if (space === "RGB" || nums.length === 3) {
+      map.set(self, [Math.round(nums[0]), Math.round(nums[1]), Math.round(nums[2])]);
+    } else if (nums.length === 4) {
+      const [c, mVal, y, k] = nums.map((n) => Math.max(0, Math.min(1, n / 100)));
+      const r = Math.round(255 * (1 - c) * (1 - k));
+      const g = Math.round(255 * (1 - mVal) * (1 - k));
+      const b = Math.round(255 * (1 - y) * (1 - k));
+      map.set(self, [r, g, b]);
+    }
+  }
+  return map;
+}
+
+function resolveHexColor(
+  colors: Map<string, [number, number, number]>,
+  fillColor?: string,
+  tint?: number
+): string | undefined {
+  if (!fillColor || fillColor === "Swatch/None" || fillColor === "Color/Paper") return undefined;
+  const rgb = colors.get(fillColor);
+  if (!rgb) return undefined;
+  // Suaviza cores saturadas para manter boa legibilidade de texto por cima
+  const factor = tint !== undefined ? Math.min(1, Math.max(0.1, tint / 100)) * 0.28 : 0.18;
+  const mix = (v: number) => Math.round(255 - (255 - v) * factor);
+  const hex = (v: number) => mix(v).toString(16).padStart(2, "0");
+  return `#${hex(rgb[0])}${hex(rgb[1])}${hex(rgb[2])}`;
+}
+
+function parseHyperlinksMap(designMapXml: string): Map<string, string> {
+  const dests = new Map<string, string>();
+  for (const m of designMapXml.matchAll(/<HyperlinkURLDestination\b[^>]*Self="([^"]+)"[^>]*DestinationURL="([^"]+)"/g)) {
+    dests.set(m[1], m[2]);
+  }
+  const map = new Map<string, string>();
+  for (const m of designMapXml.matchAll(/<Hyperlink\b([^>]*)>([\s\S]*?)<\/Hyperlink>/g)) {
+    const src = m[1].match(/Source="([^"]+)"/)?.[1];
+    const dest = m[2].match(/<Destination[^>]*>([^<]+)<\/Destination>/)?.[1];
+    if (src && dest) {
+      const url = dests.get(dest) || dest;
+      if (url) map.set(src, url);
+    }
+  }
+  return map;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -597,6 +808,21 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
     spreadSrcs.sort();
   }
 
+  const colorMap = parseColorMap(readText("Resources/Graphic.xml") || "");
+  const inlineCtx: InlineContext = { hyperlinks: parseHyperlinksMap(designMap) };
+
+  // MasterSpreads (fallback para capas/páginas cujo conteúdo fica na página-mestra)
+  const masterMap = new Map<string, { pages: PageRect[]; items: PageItem[] }>();
+  for (const name of entryMap.keys()) {
+    if (!/^MasterSpreads\/MasterSpread_.*\.xml$/i.test(name)) continue;
+    const mXml = readText(name);
+    if (!mXml) continue;
+    const mSelf = mXml.match(/<MasterSpread\b[^>]*\bSelf="([^"]+)"/)?.[1];
+    if (mSelf) {
+      masterMap.set(mSelf, { pages: readPages(mXml), items: readItems(mXml) });
+    }
+  }
+
   // Stories disponíveis no pacote.
   const storyIds = new Set<string>();
   for (const name of entryMap.keys()) {
@@ -642,9 +868,30 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
       perPage.get(page.self)!.push(item);
     }
 
-    for (const rect of pageRects) {
+    for (let pageIdx = 0; pageIdx < pageRects.length; pageIdx++) {
+      const rect = pageRects[pageIdx];
       pageNumber += 1;
-      const pageItems = sortReadingOrder(perPage.get(rect.self) || []);
+      let rawPageItems = perPage.get(rect.self) || [];
+
+      // Se a página não tem itens próprios (ex.: capas C2/C4), herda do MasterSpread.
+      let coordOrigin: Bounds = rect;
+      if (rawPageItems.length === 0 && rect.appliedMaster && masterMap.has(rect.appliedMaster)) {
+        const master = masterMap.get(rect.appliedMaster)!;
+        const mRect = master.pages[Math.min(pageIdx, Math.max(0, master.pages.length - 1))] || master.pages[0];
+        if (mRect) {
+          coordOrigin = mRect;
+          rawPageItems = master.items.filter((it) => {
+            const cx = (it.bounds.x1 + it.bounds.x2) / 2;
+            const cy = (it.bounds.y1 + it.bounds.y2) / 2;
+            return cx >= mRect.x1 - 20 && cx <= mRect.x2 + 20 && cy >= mRect.y1 - 20 && cy <= mRect.y2 + 20;
+          });
+        }
+      }
+
+      const bgRects = rawPageItems.filter(
+        (it) => !it.story && !it.link && it.fillColor && resolveHexColor(colorMap, it.fillColor, it.fillTint)
+      );
+      const pageItems = sortReadingOrder(rawPageItems);
       const width = rect.x2 - rect.x1;
       const height = rect.y2 - rect.y1;
       const blocks: Block[] = [];
@@ -653,11 +900,19 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
       const dbg = DEBUG ? { items: pageItems.length, text: 0, images: 0, skippedStories: 0, missingLinks: 0 } : null;
 
       for (const item of pageItems) {
-        const local = (b: Bounds): BlockLayout => ({
-          x: round(b.x1 - rect.x1),
-          y: round(b.y1 - rect.y1),
+        const frameBgDirect = resolveHexColor(colorMap, item.fillColor, item.fillTint);
+        const bgUnder = !frameBgDirect
+          ? bgRects.find((r) => overlapArea(r.bounds, item.bounds) >= Math.min(overlapArea(item.bounds, item.bounds), 1) * 0.65)
+          : undefined;
+        const frameBg = frameBgDirect || (bgUnder ? resolveHexColor(colorMap, bgUnder.fillColor, bgUnder.fillTint) : undefined);
+
+        const local = (b: Bounds, frameId?: string): BlockLayout => ({
+          x: round(b.x1 - coordOrigin.x1),
+          y: round(b.y1 - coordOrigin.y1),
           w: round(Math.max(1, b.x2 - b.x1)),
           h: round(Math.max(1, b.y2 - b.y1)),
+          ...(frameId ? { frameId } : {}),
+          ...(frameBg ? { frameBg } : {}),
         });
 
         if (item.story && storyIds.has(item.story)) {
@@ -669,9 +924,22 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
           if (!storyXml) continue;
           usedStories.add(item.story);
 
-          const paragraphs = parseStoryXML(storyXml);
-          let firstBlock = true;
+          const paragraphs = parseStoryXML(storyXml, inlineCtx);
+          const frameLayout = local(item.bounds, item.self || item.story);
           for (const para of paragraphs) {
+            if (para.table) {
+              blocks.push({
+                id: randomUUID(),
+                type: "table",
+                data: {
+                  headers: para.table.headers,
+                  rows: para.table.rows,
+                  striped: true,
+                },
+                layout: frameLayout,
+              } as Block);
+              continue;
+            }
             if (para.role === "alt") {
               pendingAlt.push(para.text);
               continue;
@@ -696,17 +964,16 @@ export async function importIdml(filePath: string, assetsDir: string): Promise<I
                 id: randomUUID(),
                 type: "heading",
                 data: { level: para.role === "heading2" ? 2 : 3, text },
-                ...(firstBlock ? { layout: local(item.bounds) } : {}),
+                layout: frameLayout,
               } as Block);
             } else {
               blocks.push({
                 id: randomUUID(),
                 type: "paragraph",
                 data: { html },
-                ...(firstBlock ? { layout: local(item.bounds) } : {}),
+                layout: frameLayout,
               } as Block);
             }
-            firstBlock = false;
           }
           continue;
         }

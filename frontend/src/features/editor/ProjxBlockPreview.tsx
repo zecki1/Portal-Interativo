@@ -153,14 +153,14 @@ export const ProjxBlockPreview: React.FC<Props> = ({ block, apiBase, projectId }
             d.align === "center" ? "justify-center text-center" : ""
           }`}
           style={{
-            backgroundImage: d.image
-              ? `linear-gradient(120deg, rgba(0,0,0,.72), rgba(0,0,0,.35)), url("${img(d.image)}")`
-              : "linear-gradient(120deg,#d42731,#7c2d12)",
+            backgroundColor: "#d42731",
+            backgroundImage: d.image ? `url("${img(d.image)}")` : undefined,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <div>
+          {d.image && <div className="absolute inset-0 bg-black/55" aria-hidden="true" />}
+          <div className="relative z-10">
             <h2 className="text-xl font-black leading-tight">{d.title}</h2>
             {d.subtitle && <p className="text-xs mt-1.5 opacity-95">{d.subtitle}</p>}
             {d.ctaLabel && (

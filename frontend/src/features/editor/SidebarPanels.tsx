@@ -291,7 +291,7 @@ export const SidebarPanels: React.FC<SidebarPanelsProps> = ({
   ];
 
   return (
-    <aside className="w-80 shrink-0 bg-surface border-r border-border flex flex-col h-full overflow-hidden select-none transition-colors duration-200">
+    <aside className="w-80 max-w-[85vw] shrink-0 bg-surface border-r border-border flex flex-col h-full overflow-hidden select-none transition-colors duration-200">
       {/* Abas Superiores */}
       <div className="flex border-b border-border bg-surface-3 text-xs font-semibold">
         <button

@@ -25,12 +25,12 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   const downloadUrl = `${apiBase}/projects/${projectId}/download`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-2 sm:p-4">
       {/* Barra Superior do Preview */}
-      <div className="w-full max-w-6xl bg-surface border border-border rounded-t-2xl px-6 py-3 flex items-center justify-between shadow-card transition-colors duration-200">
-        <div className="flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="text-xs font-bold text-ink truncate max-w-xs">
+      <div className="w-full max-w-6xl bg-surface border border-border rounded-t-2xl px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2 shadow-card transition-colors duration-200">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+          <span className="text-xs font-bold text-ink truncate max-w-[160px] sm:max-w-xs">
             Preview Interativo: {projectName}
           </span>
         </div>
@@ -92,14 +92,14 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
       </div>
 
       {/* Janela de Renderização Responsiva */}
-      <div className="w-full max-w-6xl flex-1 bg-surface-2 rounded-b-2xl border-x border-b border-border overflow-hidden flex items-center justify-center p-4">
+      <div className="w-full max-w-6xl flex-1 bg-surface-2 rounded-b-2xl border-x border-b border-border overflow-hidden flex items-center justify-center p-2 sm:p-4">
         <div
-          className={`h-full transition-all duration-300 rounded-xl overflow-hidden shadow-card bg-surface flex flex-col ${
+          className={`h-full max-w-full transition-all duration-300 rounded-xl overflow-hidden shadow-card bg-surface flex flex-col ${
             device === "desktop"
               ? "w-full"
               : device === "tablet"
-              ? "w-[768px]"
-              : "w-[380px]"
+              ? "w-full max-w-[768px]"
+              : "w-full max-w-[380px]"
           }`}
         >
           <iframe

@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
+import path from "node:path";
 import AdmZip from "adm-zip";
 import * as converter from "./converterService.js";
 import { buildExemploDocument } from "./blocks/exemploDocument.js";
 import { buildApp } from "../app.js";
+
+const exemploPath = (name: string) => path.resolve(__dirname, "../../../exemplos", name);
 
 describe("Converter Service & Block Architecture", () => {
   it("deve criar e salvar um documento estruturado por blocos", async () => {
@@ -151,9 +154,11 @@ describe("Converter Service & Block Architecture", () => {
       expect(withSlash.statusCode).toBe(200);
       expect(withSlash.headers["content-security-policy"]).toContain("frame-ancestors");
       expect(withSlash.body).toContain('id="page-content"');
+      expect(withSlash.body).toContain("img-skeleton");
 
       const css = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview/styles.css` });
       expect(css.statusCode).toBe(200);
+      expect(css.body).toContain("overflow-x: hidden");
 
       const js = await app.inject({ method: "GET", url: `/api/v1/projects/${createdId}/preview/script.js` });
       expect(js.statusCode).toBe(200);
@@ -175,9 +180,68 @@ describe("Converter Service & Block Architecture", () => {
       expect(entryNames).toContain("styles.css");
       expect(entryNames).toContain("script.js");
       expect(entryNames).toContain("assets/exemplo-galeria-2.svg");
+      expect(entryNames.some((n) => n.startsWith("versions/"))).toBe(false);
+
+      // Valida ausência de gradientes no HTML/CSS/SVG gerado
+      const html = zip.readAsText("index.html");
+      const cssText = zip.readAsText("styles.css");
+      const capaSvg = zip.readAsText("assets/exemplo-capa.svg");
+      const faixaSvg = zip.readAsText("assets/exemplo-faixa.svg");
+      expect(html + cssText + capaSvg + faixaSvg).not.toMatch(/linear-gradient|radial-gradient|linearGradient/i);
     } finally {
       if (createdId) await converter.deleteProject(createdId);
       await app.close();
+    }
+  });
+
+  it("deve importar ET_EF1_OD_ID386.idml com tabelas, links, layout fiel e MasterSpread em C2", async () => {
+    const app = await buildApp();
+    let id386 = "";
+    let idC2 = "";
+    try {
+      const meta386 = await converter.convertFile(exemploPath("ET_EF1_OD_ID386.idml"), "ET_EF1_OD_ID386.idml");
+      id386 = meta386.id;
+      const doc386 = await converter.getProjectDocument(id386);
+      expect(doc386.layoutMode).toBe("idml");
+      expect(doc386.pages.length).toBe(10);
+      expect(doc386.pages.some((p) => p.blocks.some((b) => b.type === "table"))).toBe(true);
+      const htmlRes = await app.inject({ method: "GET", url: `/api/v1/projects/${id386}/preview/` });
+      expect(htmlRes.statusCode).toBe(200);
+      expect(htmlRes.body).toContain("idml-canvas");
+      expect(htmlRes.body).toContain("btn-nav-toggle");
+
+      const metaC2 = await converter.convertFile(exemploPath("ET_EF1_ME_C2.idml"), "ET_EF1_ME_C2.idml");
+      idC2 = metaC2.id;
+      const docC2 = await converter.getProjectDocument(idC2);
+      expect(docC2.pages.some((p) => p.blocks.length > 0)).toBe(true);
+    } finally {
+      if (id386) await converter.deleteProject(id386);
+      if (idC2) await converter.deleteProject(idC2);
+      await app.close();
+    }
+  });
+
+  it("deve versionar projeto e restaurar estado anterior via rollback", async () => {
+    const meta = await converter.createExemploProject();
+    const id = meta.id;
+    try {
+      const v1 = await converter.createProjectVersion(id, "Antes de editar titulo", "manual");
+      const doc = await converter.getProjectDocument(id);
+      const originalTitle = doc.title;
+      doc.title = "Titulo alterado temporariamente";
+      await converter.saveProjectDocument(doc);
+
+      const edited = await converter.getProjectDocument(id);
+      expect(edited.title).toBe("Titulo alterado temporariamente");
+
+      const restored = await converter.restoreProjectVersion(id, v1.id);
+      expect(restored.title).toBe(originalTitle);
+
+      const versions = await converter.listProjectVersions(id);
+      expect(versions.some((v) => v.id === v1.id)).toBe(true);
+      expect(versions.some((v) => v.kind === "rollback")).toBe(true);
+    } finally {
+      await converter.deleteProject(id);
     }
   });
 });

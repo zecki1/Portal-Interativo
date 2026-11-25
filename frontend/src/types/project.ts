@@ -29,9 +29,19 @@ export type BlockType =
   | "word-search"
   | "crossword";
 
+export interface BlockLayout {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  frameId?: string;
+  frameBg?: string;
+}
+
 export interface BaseBlock {
   id: string;
   type: BlockType;
+  layout?: BlockLayout;
 }
 
 export interface HeadingBlock extends BaseBlock {
@@ -353,7 +363,18 @@ export interface ProjectPage {
   id: string;
   pageNumber: number;
   title: string;
+  width?: number;
+  height?: number;
   blocks: Block[];
+}
+
+export interface ProjectVersion {
+  id: string;
+  label: string;
+  kind: "auto" | "manual" | "rollback";
+  createdAt: string;
+  pageCount: number;
+  blockCount: number;
 }
 
 export interface ProjectAsset {
@@ -379,6 +400,8 @@ export interface ProjectDocument {
   pages: ProjectPage[];
   /** Idioma do conteúdo publicado (atributo `lang` do HTML). */
   locale?: string;
+  /** "idml" preserva a composição em colunas/frames do IDML no desktop; "flow" empilha linearmente. */
+  layoutMode?: "flow" | "idml";
 }
 
 export interface ProjectMeta {

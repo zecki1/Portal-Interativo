@@ -135,6 +135,52 @@ export async function convertRoutes(app: FastifyInstance) {
     }
   });
 
+  // Lista versões salvas de um projeto
+  app.get("/projects/:id/versions", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const versions = await converter.listProjectVersions(id);
+      return reply.send({ data: versions, error: null, meta: null });
+    } catch {
+      return reply.status(404).send({
+        data: null,
+        error: { message: "Projeto não encontrado." },
+        meta: null,
+      });
+    }
+  });
+
+  // Cria uma versão/marco manual do projeto
+  app.post("/projects/:id/versions", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body as { label?: string } | undefined) || {};
+    try {
+      const version = await converter.createProjectVersion(id, body.label, "manual");
+      return reply.status(201).send({ data: version, error: null, meta: null });
+    } catch (err) {
+      return reply.status(400).send({
+        data: null,
+        error: { message: err instanceof Error ? err.message : "Erro ao criar versão." },
+        meta: null,
+      });
+    }
+  });
+
+  // Restaura (rollback) o projeto para uma versão anterior
+  app.post("/projects/:id/versions/:versionId/restore", async (req, reply) => {
+    const { id, versionId } = req.params as { id: string; versionId: string };
+    try {
+      const restored = await converter.restoreProjectVersion(id, versionId);
+      return reply.send({ data: restored, error: null, meta: null });
+    } catch (err) {
+      return reply.status(400).send({
+        data: null,
+        error: { message: err instanceof Error ? err.message : "Erro ao restaurar versão." },
+        meta: null,
+      });
+    }
+  });
+
   // Cria o documento-modelo com todos os blocos (onboarding/demonstração)
   app.post("/projects/exemplo", async (_req, reply) => {
     try {
@@ -217,6 +263,10 @@ export async function convertRoutes(app: FastifyInstance) {
     const wildcard = (req.params as any)["*"] || "index.html";
     const dir = await converter.getProjectDir(id).catch(() => null);
     if (!dir) return reply.status(404).send();
+
+    if (wildcard === "index.html" || wildcard === "styles.css" || wildcard === "script.js") {
+      await converter.refreshProjectBuild(id).catch(() => {});
+    }
 
     const target = path.resolve(dir, wildcard);
     if (!target.startsWith(path.resolve(dir))) return reply.status(403).send();

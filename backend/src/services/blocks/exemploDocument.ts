@@ -12,12 +12,7 @@ import type { Block, ProjectDocument, ProjectPage } from "../converterService.js
 
 const assets = {
   "exemplo-capa.svg": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Ilustração de capa com folhas e um tucano estilizado">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f766e"/><stop offset="1" stop-color="#065f46"/>
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="#0f766e"/>
   <circle cx="1010" cy="130" r="78" fill="#fbbf24" opacity=".9"/>
   <path d="M-40 600 Q 240 420 520 585 T 1240 540 L 1240 700 L -40 700 Z" fill="#064e3b" opacity=".75"/>
   <path d="M840 470 q 90 -150 210 -120 q -30 70 -120 118 q 130 -18 178 62 q -120 46 -232 -8 q 36 92 -28 150 q -64 -92 -8 -202 z" fill="#f97316"/>
@@ -26,8 +21,7 @@ const assets = {
   <text x="94" y="334" font-family="system-ui, sans-serif" font-size="30" fill="#d1fae5">Material demonstrativo com todos os blocos</text>
 </svg>`,
   "exemplo-faixa.svg": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" role="img" aria-label="Faixa decorativa em tons de verde com silhuetas de árvores">
-  <defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#134e4a"/><stop offset="1" stop-color="#052e2b"/></linearGradient></defs>
-  <rect width="1600" height="520" fill="url(#f)"/>
+  <rect width="1600" height="520" fill="#134e4a"/>
   <g fill="#0b3b36">
     <path d="M120 520 L240 150 L360 520 Z"/><path d="M420 520 L520 230 L620 520 Z"/>
     <path d="M760 520 L900 120 L1040 520 Z"/><path d="M1140 520 L1260 200 L1380 520 Z"/>

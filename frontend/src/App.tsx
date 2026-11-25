@@ -55,12 +55,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface-2 flex flex-col font-sans text-ink transition-colors duration-200">
       {/* Header Institucional Global */}
-      <header className="h-14 bg-surface border-b border-border px-6 flex items-center justify-between sticky top-0 z-40 shadow-sm select-none transition-colors duration-200">
-        <Link to="/" className="flex items-center gap-3 group">
-          <Logo className="h-6 w-auto text-brand-red logo-marca" title="SESI" />
-          <div className="h-4 w-px bg-border" />
-          <span className="font-bold text-sm tracking-tight text-ink group-hover:text-brand-red transition">
-            Interativo <span className="text-xs font-normal text-muted">· Livros para Web</span>
+      <header className="h-14 bg-surface border-b border-border px-3 sm:px-6 flex items-center justify-between gap-2 sticky top-0 z-40 shadow-sm select-none transition-colors duration-200">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 group min-w-0">
+          <Logo className="h-6 w-auto shrink-0 text-brand-red logo-marca" title="SESI" />
+          <div className="h-4 w-px bg-border shrink-0" />
+          <span className="font-bold text-sm tracking-tight text-ink group-hover:text-brand-red transition truncate">
+            Interativo <span className="hidden sm:inline text-xs font-normal text-muted">· Livros para Web</span>
           </span>
         </Link>
 

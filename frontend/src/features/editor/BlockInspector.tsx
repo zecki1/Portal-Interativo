@@ -3,6 +3,12 @@ import type { Block, ProjectAsset, ImageHotspot } from "../../types/project";
 import { BlockSchemaEditor, hasSchema } from "./BlockSchemaEditor";
 import { newId } from "../../lib/ids";
 import {
+  isImageSkeletonBlock,
+  getImageSuggestions,
+  detectStaticGameTitle,
+  getGameSuggestions,
+} from "../../lib/blockSuggestions";
+import {
   LuImage,
   LuTriangleAlert,
   LuSearch,
@@ -45,7 +51,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
 }) => {
   if (!block) {
     return (
-      <aside className="w-80 shrink-0 bg-surface border-l border-border p-6 flex flex-col items-center justify-center text-center text-muted select-none transition-colors duration-200">
+      <aside className="w-80 max-w-[85vw] shrink-0 bg-surface border-l border-border p-6 flex flex-col items-center justify-center text-center text-muted select-none transition-colors duration-200 h-full">
         <IconSliders className="w-10 h-10 mb-3 opacity-40 text-muted" />
         <p className="text-sm font-bold text-ink">Nenhum bloco selecionado</p>
         <p className="text-xs text-muted mt-1 max-w-[200px]">
@@ -56,7 +62,7 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
   }
 
   return (
-    <aside className="w-80 shrink-0 bg-surface border-l border-border flex flex-col h-full overflow-hidden select-none shadow-sm transition-colors duration-200">
+    <aside className="w-80 max-w-[85vw] shrink-0 bg-surface border-l border-border flex flex-col h-full overflow-hidden select-none shadow-sm transition-colors duration-200">
       {/* Header do Inspector */}
       <div className="p-3.5 border-b border-border flex items-center justify-between bg-surface-3">
         <div className="flex items-center gap-2">
@@ -686,6 +692,57 @@ export const BlockInspector: React.FC<BlockInspectorProps> = ({
 
         {/* BLOCOS PROJETOX — formulário gerado pelo esquema */}
         {hasSchema(block.type) && <BlockSchemaEditor block={block} onUpdateBlock={onUpdateBlock} />}
+
+        {/* SUGESTÕES CONTEXTUAIS (Skeleton de imagem e jogos estáticos) */}
+        {isImageSkeletonBlock(block) && (
+          <div className="pt-3 border-t border-border space-y-2">
+            <label className="font-bold text-ink block">
+              Sugestões para esta área de imagem
+              <span className="block text-[10px] text-muted font-normal mt-0.5">
+                Converta o espaço reservado em um componente interativo:
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {getImageSuggestions(block, assets[0]?.path || "").map((sug) => (
+                <button
+                  key={sug.label}
+                  type="button"
+                  onClick={() => onUpdateBlock(sug.action())}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-surface-3 hover:border-brand-red hover:text-brand-red text-[11px] font-bold text-ink transition"
+                >
+                  {sug.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(() => {
+          const gameTopic = detectStaticGameTitle(block);
+          if (!gameTopic) return null;
+          return (
+            <div className="pt-3 border-t border-border space-y-2">
+              <label className="font-bold text-ink block">
+                Substituir por jogo do editor
+                <span className="block text-[10px] text-muted font-normal mt-0.5">
+                  Este bloco cita uma atividade externa. Troque por um jogo nativo:
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {getGameSuggestions(block, gameTopic).map((sug) => (
+                  <button
+                    key={sug.type}
+                    type="button"
+                    onClick={() => onUpdateBlock(sug.action())}
+                    className="px-2.5 py-1.5 rounded-lg border border-border bg-surface-3 hover:border-brand-red hover:text-brand-red text-[11px] font-bold text-ink transition"
+                  >
+                    {sug.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
       </aside>
   );

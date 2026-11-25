@@ -56,6 +56,17 @@ export interface BlockLayout {
   y: number;
   w: number;
   h: number;
+  frameId?: string;
+  frameBg?: string;
+}
+
+export interface ProjectVersion {
+  id: string;
+  label: string;
+  kind: "auto" | "manual" | "rollback";
+  createdAt: string;
+  pageCount: number;
+  blockCount: number;
 }
 
 export interface BaseBlock {
@@ -341,6 +352,8 @@ export interface ProjectDocument {
   pages: ProjectPage[];
   /** Idioma do conteúdo publicado (atributo `lang` do HTML). Padrão: pt-BR. */
   locale?: string;
+  /** "idml" preserva a composição em colunas/frames do IDML no desktop; "flow" empilha linearmente. */
+  layoutMode?: "flow" | "idml";
 }
 
 export interface ProjectMeta {
@@ -439,10 +452,12 @@ export async function convertFile(filePath: string, originalName: string): Promi
     },
     assets,
     pages,
+    ...(ext === ".idml" ? { layoutMode: "idml" as const } : {}),
   };
 
-  // Salvar project.json e gerar arquivos web
+  // Salvar project.json, gerar arquivos web e registrar versão inicial
   await saveProjectDocument(doc);
+  await createProjectVersion(doc.id, "Importação inicial", "auto").catch(() => {});
   return getProjectMeta(doc);
 }
 
@@ -832,6 +847,117 @@ export async function saveProjectDocument(doc: ProjectDocument): Promise<void> {
   await fs.writeFile(path.join(projectDir, "index.html"), html, "utf8");
   await fs.writeFile(path.join(projectDir, "styles.css"), css, "utf8");
   await fs.writeFile(path.join(projectDir, "script.js"), js, "utf8");
+
+  await maybeCreateAutoVersion(doc).catch(() => {});
+}
+
+/* -------------------------------------------------------------------------- */
+/* Versionamento por projeto + Rollback                                        */
+/* -------------------------------------------------------------------------- */
+
+const MAX_VERSIONS = 30;
+const AUTO_VERSION_INTERVAL_MS = 2 * 60 * 1000;
+
+function versionsDirOf(id: string): string {
+  return path.join(PROJECTS_DIR, id, "versions");
+}
+
+async function readVersionIndex(id: string): Promise<ProjectVersion[]> {
+  const dir = versionsDirOf(id);
+  try {
+    const raw = await fs.readFile(path.join(dir, "index.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeVersionIndex(id: string, list: ProjectVersion[]): Promise<void> {
+  const dir = versionsDirOf(id);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "index.json"), JSON.stringify(list, null, 2), "utf8");
+}
+
+async function maybeCreateAutoVersion(doc: ProjectDocument): Promise<void> {
+  const list = await readVersionIndex(doc.id);
+  const lastAuto = list.find((v) => v.kind === "auto");
+  if (lastAuto) {
+    const elapsed = Date.now() - new Date(lastAuto.createdAt).getTime();
+    if (!Number.isNaN(elapsed) && elapsed < AUTO_VERSION_INTERVAL_MS) return;
+  }
+  await createProjectVersion(doc.id, "Salvamento automático", "auto", doc);
+}
+
+export async function listProjectVersions(id: string): Promise<ProjectVersion[]> {
+  await getProjectDocument(id);
+  return readVersionIndex(id);
+}
+
+export async function createProjectVersion(
+  id: string,
+  label?: string,
+  kind: ProjectVersion["kind"] = "manual",
+  docOverride?: ProjectDocument
+): Promise<ProjectVersion> {
+  const doc = docOverride ?? (await getProjectDocument(id));
+  const dir = versionsDirOf(id);
+  await fs.mkdir(dir, { recursive: true });
+
+  const versionId = `v_${Date.now()}_${randomUUID().slice(0, 8)}`;
+  const meta = getProjectMeta(doc);
+  const entry: ProjectVersion = {
+    id: versionId,
+    label: (label || "").trim() || (kind === "manual" ? "Marco manual" : "Versão automática"),
+    kind,
+    createdAt: new Date().toISOString(),
+    pageCount: meta.pageCount,
+    blockCount: meta.blockCount,
+  };
+
+  await fs.writeFile(path.join(dir, `${versionId}.json`), JSON.stringify(doc, null, 2), "utf8");
+  const current = await readVersionIndex(id);
+  const updated = [entry, ...current];
+
+  // Mantém versões recentes dentro do limite (preservando sempre a mais antiga/inicial se possível)
+  while (updated.length > MAX_VERSIONS) {
+    const removeIdx = updated.findIndex((v, i) => i > 0 && i < updated.length - 1 && v.kind === "auto");
+    const idx = removeIdx !== -1 ? removeIdx : updated.length - 2;
+    const [removed] = updated.splice(idx, 1);
+    if (removed) {
+      await fs.unlink(path.join(dir, `${removed.id}.json`)).catch(() => {});
+    }
+  }
+
+  await writeVersionIndex(id, updated);
+  return entry;
+}
+
+export async function restoreProjectVersion(id: string, versionId: string): Promise<ProjectDocument> {
+  const dir = versionsDirOf(id);
+  const snapRaw = await fs.readFile(path.join(dir, `${versionId}.json`), "utf8");
+  const snapshot = JSON.parse(snapRaw) as ProjectDocument;
+  if (!snapshot || snapshot.id !== id) {
+    throw new Error("Versão inválida ou incompatível com este projeto.");
+  }
+
+  // Salva backup do estado atual antes de restaurar
+  await createProjectVersion(id, "Backup antes do rollback", "rollback").catch(() => {});
+
+  const restored: ProjectDocument = {
+    ...snapshot,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const projectDir = path.join(PROJECTS_DIR, id);
+  await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify(restored, null, 2), "utf8");
+  const meta = getProjectMeta(restored);
+  await fs.writeFile(path.join(projectDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+  await fs.writeFile(path.join(projectDir, "index.html"), buildHtmlFromDoc(restored), "utf8");
+  await fs.writeFile(path.join(projectDir, "styles.css"), buildCssFromDoc(restored), "utf8");
+  await fs.writeFile(path.join(projectDir, "script.js"), buildJsFromDoc(), "utf8");
+
+  return restored;
 }
 
 /**
@@ -850,6 +976,7 @@ export async function createExemploProject(): Promise<ProjectMeta> {
 
   const doc = buildExemploDocument(id);
   await saveProjectDocument(doc);
+  await createProjectVersion(doc.id, "Criação do material de exemplo", "auto").catch(() => {});
   return getProjectMeta(doc);
 }
 
@@ -908,11 +1035,20 @@ export async function deleteProject(id: string): Promise<void> {
   await fs.unlink(zipFile).catch(() => { });
 }
 
+export async function refreshProjectBuild(id: string): Promise<void> {
+  const doc = await getProjectDocument(id);
+  const projectDir = path.join(PROJECTS_DIR, id);
+  await fs.writeFile(path.join(projectDir, "index.html"), buildHtmlFromDoc(doc), "utf8");
+  await fs.writeFile(path.join(projectDir, "styles.css"), buildCssFromDoc(doc), "utf8");
+  await fs.writeFile(path.join(projectDir, "script.js"), buildJsFromDoc(), "utf8");
+}
+
 export async function zipProject(id: string): Promise<string> {
+  await refreshProjectBuild(id).catch(() => {});
   const dir = await getProjectDir(id);
   const zipPath = path.join(PROJECTS_DIR, `${id}.zip`);
   const zip = new AdmZip();
-  zip.addLocalFolder(dir);
+  zip.addLocalFolder(dir, "", (entryName) => !/^versions(?:[\\/]|$)/i.test(entryName));
   zip.writeZip(zipPath);
   return zipPath;
 }
@@ -920,6 +1056,63 @@ export async function zipProject(id: string): Promise<string> {
 // ============================================================================
 // BUILD WEB FINAL (HTML5 + CSS + VANILLA JS)
 // ============================================================================
+function renderPageContentHtml(doc: ProjectDocument, p: ProjectPage): string {
+  const useIdmlLayout =
+    doc.layoutMode === "idml" &&
+    typeof p.width === "number" &&
+    p.width > 0 &&
+    typeof p.height === "number" &&
+    p.height > 0 &&
+    p.blocks.some((b) => b.layout);
+
+  if (!useIdmlLayout) {
+    return `<div class="page-content">
+        ${p.blocks.map((b) => renderBlockHtml(b)).join("\n")}
+      </div>`;
+  }
+
+  const pageW = p.width!;
+  const pageH = p.height!;
+  const groups: Array<{ layout: BlockLayout; blocks: Block[] }> = [];
+  const unpositioned: Block[] = [];
+
+  for (const b of p.blocks) {
+    if (!b.layout) {
+      unpositioned.push(b);
+      continue;
+    }
+    const prev = groups[groups.length - 1];
+    if (b.layout.frameId && prev && prev.layout.frameId === b.layout.frameId) {
+      prev.blocks.push(b);
+    } else {
+      groups.push({ layout: b.layout, blocks: [b] });
+    }
+  }
+
+  const pct = (val: number, total: number) => `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(2)}%`;
+  const ratio = (pageH / pageW).toFixed(4);
+  const framesHtml = groups
+    .map((g) => {
+      const l = g.layout;
+      const bgStyle = l.frameBg ? `background:${l.frameBg};padding:12px;border-radius:10px;` : "";
+      const style = `left:${pct(l.x, pageW)};top:${pct(l.y, pageH)};width:${pct(Math.max(12, l.w), pageW)};min-height:${pct(l.h, pageH)};${bgStyle}`;
+      const isImg = g.blocks.length === 1 && g.blocks[0].type === "image";
+      return `<div class="idml-frame${isImg ? " is-image" : ""}" style="${style}">
+        ${g.blocks.map((b) => renderBlockHtml(b)).join("\n")}
+      </div>`;
+    })
+    .join("\n");
+
+  const extraHtml = unpositioned.length
+    ? `<div class="page-content idml-extra">${unpositioned.map((b) => renderBlockHtml(b)).join("\n")}</div>`
+    : "";
+
+  return `<div class="idml-canvas" style="--idml-ratio:${ratio};aspect-ratio:${pageW} / ${pageH}">
+        ${framesHtml}
+      </div>
+      ${extraHtml}`;
+}
+
 function buildHtmlFromDoc(doc: ProjectDocument): string {
   const navItems = doc.pages
     .map(
@@ -934,14 +1127,12 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
   const pagesHtml = doc.pages
     .map(
       (p) => `
-    <article id="page-${p.id}" class="book-page">
+    <article id="page-${p.id}" class="book-page${doc.layoutMode === "idml" && p.width ? " is-idml" : ""}">
       <header class="page-header">
         <span class="page-badge">Página ${p.pageNumber}</span>
         <h2 class="page-title">${escapeHtml(p.title || "")}</h2>
       </header>
-      <div class="page-content">
-        ${p.blocks.map((b) => renderBlockHtml(b)).join("\n")}
-      </div>
+      ${renderPageContentHtml(doc, p)}
     </article>`
     )
     .join("\n");
@@ -959,6 +1150,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
     <!-- Barra Superior -->
     <header class="top-bar">
       <div class="top-brand">
+        <button id="btn-nav-toggle" class="btn-ctrl btn-nav-mobile" type="button" aria-expanded="false" aria-controls="sidebar-nav">Páginas</button>
         <span class="brand-badge">SESI</span>
         <h1 class="book-heading">${escapeHtml(doc.title)}</h1>
       </div>
@@ -970,7 +1162,7 @@ function buildHtmlFromDoc(doc: ProjectDocument): string {
 
     <div class="main-container">
       <!-- Navegação lateral por páginas -->
-      <aside class="sidebar-nav" aria-label="Navegação de páginas">
+      <aside id="sidebar-nav" class="sidebar-nav" aria-label="Navegação de páginas">
         <div class="nav-header">
           <h3>Sumário de Páginas</h3>
           <span class="badge-count">${doc.pages.length} páginas</span>
@@ -1028,14 +1220,18 @@ function renderBlockHtml(block: Block): string {
       return `<div class="block-paragraph"><p>${html}</p></div>`;
     }
     case "image": {
-      // Referência do InDesign sem arquivo: placeholder vinculável no editor.
+      // Referência do InDesign sem arquivo: skeleton preserva a área para adicionar imagem.
       if (block.data.missing || !block.data.src) {
+        const aspect =
+          block.layout && block.layout.w > 0 && block.layout.h > 0
+            ? ` style="aspect-ratio:${block.layout.w} / ${block.layout.h};min-height:140px;max-height:440px"`
+            : "";
         return `
           <figure class="block-image block-image-missing">
-            <div class="img-placeholder" role="img" aria-label="${escapeHtml(block.data.alt || block.data.fileName || "Imagem pendente")}">
+            <div class="img-placeholder img-skeleton" role="img" aria-label="${escapeHtml(block.data.alt || block.data.fileName || "Área reservada para imagem")}"${aspect}>
               <span class="img-placeholder-icon" aria-hidden="true">${svgIcon("image")}</span>
               <strong>${escapeHtml(block.data.fileName || block.data.alt || "Imagem")}</strong>
-              <span>Recurso do InDesign · vincule o arquivo no editor</span>
+              <span>Área reservada para imagem · vincule ou converta no editor (Parallax, Imagem Interativa, Flipcard, Galeria)</span>
             </div>
             ${block.data.caption ? `<figcaption>${escapeHtml(block.data.caption)}</figcaption>` : ""}
           </figure>`;
@@ -1205,6 +1401,10 @@ function buildCssFromDoc(doc: ProjectDocument): string {
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
 body {
   font-family: ${doc.theme.fontFamily || "system-ui, -apple-system, sans-serif"};
   background-color: var(--bg-page);
@@ -1212,9 +1412,10 @@ body {
   line-height: 1.65;
   font-size: 16px;
 }
+a { overflow-wrap: anywhere; word-break: break-word; }
 
 /* Layout Geral */
-.app-layout { display: flex; flex-direction: column; min-height: 100vh; }
+.app-layout { display: flex; flex-direction: column; min-height: 100vh; max-width: 100%; }
 .top-bar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-color);
@@ -1251,7 +1452,7 @@ body {
 }
 .btn-ctrl:hover { background: rgba(0,0,0,0.05); }
 
-.main-container { display: flex; flex: 1; }
+.main-container { display: flex; flex: 1; min-width: 0; max-width: 100%; }
 
 /* Sidebar */
 .sidebar-nav {
@@ -1295,9 +1496,12 @@ body {
 /* Content Area */
 .content-area {
   flex: 1;
-  max-width: 920px;
+  min-width: 0;
+  width: 100%;
+  max-width: 960px;
   margin: 0 auto;
   padding: 36px 24px 80px;
+  overflow-x: hidden;
 }
 .book-page {
   background: var(--bg-surface);
@@ -1306,12 +1510,18 @@ body {
   padding: 36px;
   margin-bottom: 40px;
   box-shadow: var(--shadow-sm);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 .page-header {
   border-bottom: 2px solid var(--border-color);
   padding-bottom: 16px;
   margin-bottom: 28px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
 }
@@ -1324,8 +1534,36 @@ body {
   padding: 4px 10px;
   border-radius: 20px;
 }
-.page-title { font-size: 1.5rem; font-weight: 700; color: var(--text-main); }
-.page-content { display: flex; flex-direction: column; gap: 24px; }
+.page-title { font-size: 1.5rem; font-weight: 700; color: var(--text-main); overflow-wrap: anywhere; }
+.page-content { display: flex; flex-direction: column; gap: 24px; min-width: 0; max-width: 100%; }
+.page-content > * { min-width: 0; max-width: 100%; }
+.block-heading-1, .block-heading-2, .block-heading-3 { overflow-wrap: anywhere; }
+
+/* Layout fiel ao IDML (desktop preserva colunas/posições; mobile empilha) */
+.idml-canvas {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+.idml-frame {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+.idml-frame .block-heading-2 { font-size: 1.18rem; margin-top: 0; }
+.idml-frame .block-heading-3 { font-size: 1rem; }
+.idml-frame .block-paragraph p,
+.idml-frame .block-paragraph ul,
+.idml-frame .block-paragraph ol { font-size: 0.9rem; line-height: 1.5; }
+.idml-frame.is-image { overflow: hidden; }
+.idml-frame.is-image .block-image { margin: 0; height: 100%; }
+.idml-frame.is-image .block-image img { width: 100%; height: 100%; object-fit: contain; }
+.idml-extra { margin-top: 24px; }
+.btn-nav-mobile { display: none; }
 
 /* Blocos */
 .block-heading-1 { font-size: 1.85rem; font-weight: 800; color: var(--brand-red); margin-top: 12px; }
@@ -1387,7 +1625,7 @@ body {
 
 /* Tabs */
 .block-tabs { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; margin: 16px 0; }
-.tabs-header { display: flex; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border-color); }
+.tabs-header { display: flex; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border-color); }
 .tab-btn {
   padding: 12px 20px;
   border: none;
@@ -1420,7 +1658,7 @@ body {
 /* Boxes padrão ProjetoX (SENAI) */
 .pbox {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
   align-items: center;
   padding: 20px 24px;
@@ -1428,7 +1666,10 @@ body {
   border: 1px solid var(--border-color);
   border-left: 6px solid;
   margin: 20px 0;
+  min-width: 0;
+  max-width: 100%;
 }
+.pbox-body { min-width: 0; }
 .pbox-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .02em; }
 .pbox-content { font-size: 1.02rem; line-height: 1.65; overflow-wrap: anywhere; }
 .pbox-content p { margin: 6px 0; }
@@ -1453,7 +1694,7 @@ ${ICON_CSS}
 .pbox-curiosity { background: #faf5ff; border-left-color: #a855f7; }
 [data-theme="dark"] .pbox { background: rgba(255,255,255,.05); }
 [data-theme="dark"] .pbox-title { color: inherit; filter: brightness(1.5); }
-@media (max-width: 640px) { .pbox { grid-template-columns: 1fr; } .pbox-icon { display: none; } }
+@media (max-width: 640px) { .pbox { grid-template-columns: minmax(0, 1fr); padding: 16px; } .pbox-icon { display: none; } }
 
 /* Imagem interativa com zonas de clique */
 .hotspot-wrap { position: relative; display: inline-block; max-width: 100%; }
@@ -1487,22 +1728,25 @@ ${ICON_CSS}
 #hotspot-modal h3 { margin-bottom: 10px; font-size: 1.2rem; }
 #hotspot-modal .hotspot-body { line-height: 1.65; overflow-wrap: anywhere; }
 
-/* Placeholder de imagem vinculada (arquivo ausente) */
+/* Skeleton de imagem vinculada (preserva área e sugere interações) */
 .block-image-missing .img-placeholder {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 28px 20px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  padding: 24px 18px;
   border: 2px dashed var(--border-color, #cbd5e1);
   border-radius: var(--radius-md);
   color: var(--text-muted, #64748b);
   font-size: .85rem;
   background: var(--surface-2, #f8fafc);
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .img-placeholder-icon { font-size: 2rem; }
 .img-placeholder strong { color: var(--text-main, #1e293b); font-size: .95rem; }
 
 /* Quiz Interativo */
 .block-quiz {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: var(--bg-page);
   border: 2px dashed #cbd5e1;
   border-radius: var(--radius-lg);
   padding: 24px;
@@ -1618,10 +1862,47 @@ ${ICON_CSS}
 
 /* Responsividade */
 @media (max-width: 768px) {
-  .sidebar-nav { display: none; }
-  .content-area { padding: 16px 12px; }
-  .book-page { padding: 20px 16px; }
-  .book-heading { font-size: 1.05rem; }
+  .top-bar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .top-brand { min-width: 0; flex: 1 1 auto; }
+  .book-heading { font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-controls { gap: 6px; }
+  .btn-ctrl { padding: 6px 10px; font-size: 0.8rem; }
+  .btn-nav-mobile { display: inline-flex; align-items: center; gap: 4px; }
+  .sidebar-nav {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 56px;
+    bottom: 0;
+    width: 100%;
+    height: auto;
+    z-index: 50;
+    border-right: none;
+  }
+  .sidebar-nav.open { display: block; }
+  .content-area { max-width: 100%; padding: 16px 12px 72px; }
+  .book-page { max-width: 100%; padding: 18px 14px; margin-bottom: 24px; }
+  .page-title { font-size: 1.2rem; }
+  .idml-canvas {
+    position: static;
+    aspect-ratio: auto !important;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .idml-frame {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    overflow: visible;
+    font-size: 1rem;
+  }
+  .idml-frame .block-paragraph p,
+  .idml-frame .block-paragraph ul,
+  .idml-frame .block-paragraph ol { font-size: 1.02rem; line-height: 1.65; }
 }
 ${PROJX_CSS}
 `;
@@ -1753,6 +2034,27 @@ function initBook() {
     updateTop();
     topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
   }
+
+  // 8. Navegação mobile e item ativo
+  const navToggle = document.getElementById("btn-nav-toggle");
+  const sidebarNav = document.getElementById("sidebar-nav");
+  const navItems = document.querySelectorAll(".nav-item");
+  if (navToggle && sidebarNav) {
+    navToggle.addEventListener("click", () => {
+      const open = sidebarNav.classList.toggle("open");
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
+  navItems.forEach(item => {
+    item.addEventListener("click", () => {
+      navItems.forEach(n => n.classList.remove("active"));
+      item.classList.add("active");
+      if (sidebarNav && sidebarNav.classList.contains("open")) {
+        sidebarNav.classList.remove("open");
+        if (navToggle) navToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  });
 }
 
 if (document.readyState === "loading") {

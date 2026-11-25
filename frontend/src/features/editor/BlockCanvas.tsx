@@ -3,6 +3,13 @@ import type { ProjectPage, Block, BlockType } from "../../types/project";
 import { ProjxBlockPreview, isProjxBlock } from "./ProjxBlockPreview";
 import { blockLabel } from "../../lib/blockLabels";
 import {
+  isImageSkeletonBlock,
+  extractVectorFileName,
+  getImageSuggestions,
+  detectStaticGameTitle,
+  getGameSuggestions,
+} from "../../lib/blockSuggestions";
+import {
   LuTriangleAlert,
   LuSearch,
   LuLightbulb,
@@ -84,13 +91,13 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-surface-2 p-6 flex flex-col items-center transition-colors duration-200">
+    <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-surface-2 p-3 sm:p-6 flex flex-col items-center transition-colors duration-200">
       {/* Folha / Página do Livro */}
-      <div className="w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-8 sm:p-12 mb-12  flex flex-col transition-colors duration-200">
+      <div className="w-full max-w-3xl bg-surface rounded-2xl shadow-card border border-border p-4 sm:p-10 mb-12 flex flex-col min-w-0 transition-colors duration-200">
         {/* Cabeçalho da Página */}
-        <div className="flex items-center justify-between pb-4 border-b border-border mb-8">
-          <div className="flex items-center gap-3">
-            <span className="bg-brand-red text-white text-xs font-black uppercase px-2.5 py-1 rounded-full tracking-wider shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-border mb-6 sm:mb-8">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <span className="bg-brand-red text-white text-xs font-black uppercase px-2.5 py-1 rounded-full tracking-wider shadow-sm shrink-0">
               Página {page.pageNumber}
             </span>
             <input
@@ -100,10 +107,10 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                 page.title = e.target.value;
               }}
               placeholder="Título da página ou seção"
-              className="text-lg font-bold text-ink bg-transparent hover:bg-surface-3 focus:bg-surface px-2 py-1 rounded border border-transparent hover:border-border focus:border-brand-red outline-none transition"
+              className="w-full min-w-0 flex-1 text-base sm:text-lg font-bold text-ink bg-transparent hover:bg-surface-3 focus:bg-surface px-2 py-1 rounded border border-transparent hover:border-border focus:border-brand-red outline-none transition"
             />
           </div>
-          <span className="text-xs font-semibold text-muted">
+          <span className="text-xs font-semibold text-muted shrink-0">
             {page.blocks.length} {page.blocks.length === 1 ? "bloco" : "blocos"}
           </span>
         </div>
@@ -237,7 +244,7 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                     </div>
 
                     {/* Conteúdo Visual do Bloco */}
-                    <div className="select-text">
+                    <div className="select-text min-w-0 break-words [overflow-wrap:anywhere]">
                       {/* TÍTULO */}
                       {block.type === "heading" && (
                         <div>
@@ -269,18 +276,40 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                         />
                       )}
 
-                      {/* IMAGEM */}
+                      {/* IMAGEM / SKELETON */}
                       {block.type === "image" && (
                         <div className="text-center my-1">
                           {block.data.missing || !block.data.src ? (
-                            <div className="w-full inline-flex flex-col items-center gap-1 p-6 rounded-xl border-2 border-dashed border-border bg-surface-3">
+                            <div
+                              style={
+                                block.layout && block.layout.w > 0 && block.layout.h > 0
+                                  ? { aspectRatio: `${block.layout.w} / ${block.layout.h}` }
+                                  : undefined
+                              }
+                              className="w-full min-h-[140px] max-h-[360px] flex flex-col items-center justify-center gap-2 p-5 rounded-xl border-2 border-dashed border-border bg-surface-3"
+                            >
                               <IconImage className="w-8 h-8 opacity-60 text-brand-red" />
                               <p className="text-xs font-bold text-ink break-all">
-                                {block.data.fileName || block.data.alt || "Imagem"}
+                                {block.data.fileName || block.data.alt || "Área de imagem"}
                               </p>
-                              <p className="text-[10px] text-muted">
-                                Recurso vinculado do InDesign · envie o arquivo na aba Mídia e clique em "Usar"
+                              <p className="text-[11px] text-muted max-w-md">
+                                Skeleton preservando a área do material · envie/vincule uma imagem em Mídias ou converta em:
                               </p>
+                              <div
+                                className="flex flex-wrap items-center justify-center gap-1.5 pt-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {getImageSuggestions(block).map((sug) => (
+                                  <button
+                                    key={sug.label}
+                                    type="button"
+                                    onClick={() => onUpdateBlock(sug.action())}
+                                    className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:border-brand-red hover:text-brand-red text-[10px] font-bold text-ink transition"
+                                  >
+                                    {sug.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           ) : (
                             <div className="inline-block relative rounded-xl overflow-hidden border border-border bg-surface-3">
@@ -465,6 +494,58 @@ export const BlockCanvas: React.FC<BlockCanvasProps> = ({
                       {isProjxBlock(block.type) && (
                         <ProjxBlockPreview block={block} apiBase={apiBase} projectId={projectId} />
                       )}
+
+                      {/* SUGESTÃO PARA VETOR LEGADO (CALLOUT) */}
+                      {block.type === "callout" && isImageSkeletonBlock(block) && (
+                        <div
+                          className="mt-2 p-3 rounded-xl border border-dashed border-border bg-surface-3 text-center space-y-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <p className="text-[11px] font-bold text-ink">
+                            Área de imagem ({extractVectorFileName(block)}) — converter em bloco visual:
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-1.5">
+                            {getImageSuggestions(block).map((sug) => (
+                              <button
+                                key={sug.label}
+                                type="button"
+                                onClick={() => onUpdateBlock(sug.action())}
+                                className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:border-brand-red hover:text-brand-red text-[10px] font-bold text-ink transition"
+                              >
+                                {sug.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SUGESTÃO DE JOGOS INTERATIVOS PARA QUEBRA-CABEÇA / ATIVIDADE ESTÁTICA */}
+                      {(() => {
+                        const gameTopic = detectStaticGameTitle(block);
+                        if (!gameTopic) return null;
+                        return (
+                          <div
+                            className="mt-2 p-3 rounded-xl border border-dashed border-brand-red/40 bg-brand-red/5 space-y-1.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <p className="text-[11px] font-bold text-ink">
+                              Sugestão: transformar em jogo interativo ({gameTopic})
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {getGameSuggestions(block, gameTopic).map((sug) => (
+                                <button
+                                  key={sug.type}
+                                  type="button"
+                                  onClick={() => onUpdateBlock(sug.action())}
+                                  className="px-2.5 py-1 rounded-lg border border-border bg-surface hover:border-brand-red hover:text-brand-red text-[10px] font-bold text-ink transition"
+                                >
+                                  {sug.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

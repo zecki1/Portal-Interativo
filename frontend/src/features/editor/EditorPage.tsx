@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/api";
-import type { ProjectDocument, Block, BlockType, ProjectPage } from "../../types/project";
+import type { ProjectDocument, Block, BlockType, ProjectPage, ProjectVersion } from "../../types/project";
 import { SidebarPanels } from "./SidebarPanels";
 import { BlockCanvas } from "./BlockCanvas";
 import { BlockInspector } from "./BlockInspector";
 import { PreviewModal } from "./PreviewModal";
 import { newId } from "../../lib/ids";
 import { useLocale, LOCALES } from "../../lib/i18n";
+import { LuHistory, LuLayers, LuRotateCcw, LuX } from "react-icons/lu";
 import {
   IconChevronLeft,
   IconEye,
@@ -31,7 +32,15 @@ export default function EditorPage() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [sidebarTab, setSidebarTab] = useState<"pages" | "blocks" | "media">("pages");
   const [showPreview, setShowPreview] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true
+  );
+  const [showVersions, setShowVersions] = useState(false);
+  const [versions, setVersions] = useState<ProjectVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionLabel, setVersionLabel] = useState("");
+  const [versionActionBusy, setVersionActionBusy] = useState(false);
 
   // Estados de salvamento
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
@@ -106,6 +115,68 @@ export default function EditorPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
+    }
+  };
+
+  // Versionamento e rollback
+  const loadVersions = async () => {
+    if (!id) return;
+    setVersionsLoading(true);
+    try {
+      const res = await apiFetch<ProjectVersion[]>(`/projects/${id}/versions`);
+      setVersions(res.data || []);
+    } catch {
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const handleOpenVersions = async () => {
+    await flushPendingSave();
+    setShowVersions(true);
+    await loadVersions();
+  };
+
+  const handleSaveVersion = async () => {
+    if (!id || versionActionBusy) return;
+    setVersionActionBusy(true);
+    try {
+      await flushPendingSave();
+      await apiFetch(`/projects/${id}/versions`, {
+        method: "POST",
+        body: JSON.stringify({ label: versionLabel.trim() || undefined }),
+      });
+      setVersionLabel("");
+      await loadVersions();
+    } catch (err: any) {
+      alert(err.message || "Erro ao salvar versão.");
+    } finally {
+      setVersionActionBusy(false);
+    }
+  };
+
+  const handleRestoreVersion = async (v: ProjectVersion) => {
+    if (!id || versionActionBusy) return;
+    if (!window.confirm(`Restaurar o projeto para "${v.label}"? Um backup automático do estado atual será criado antes.`)) {
+      return;
+    }
+    setVersionActionBusy(true);
+    try {
+      const res = await apiFetch<ProjectDocument>(`/projects/${id}/versions/${v.id}/restore`, {
+        method: "POST",
+      });
+      if (res.data) {
+        setDoc(res.data);
+        setActivePageIndex(0);
+        setSelectedBlockId(res.data.pages[0]?.blocks[0]?.id || null);
+        setSaveStatus("saved");
+        await loadVersions();
+      }
+    } catch (err: any) {
+      alert(err.message || "Erro ao restaurar versão.");
+    } finally {
+      setVersionActionBusy(false);
     }
   };
 
@@ -354,23 +425,34 @@ export default function EditorPage() {
   const selectedBlock =
     activePage?.blocks.find((b) => b.id === selectedBlockId) || null;
 
+  const hasIdmlGeometry = doc.pages.some((p) => typeof p.width === "number" && p.width > 0);
+
   return (
-    <div className="h-[calc(100vh-56px)] w-screen flex flex-col bg-surface-2 overflow-hidden font-sans select-none transition-colors duration-200">
+    <div className="h-[calc(100vh-56px)] w-full flex flex-col bg-surface-2 overflow-hidden font-sans select-none transition-colors duration-200">
       {/* Top Header do Editor */}
-      <header className="h-14 bg-surface border-b border-border px-4 flex items-center justify-between z-30 shrink-0 transition-colors duration-200">
+      <header className="min-h-14 bg-surface border-b border-border px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 z-30 shrink-0 transition-colors duration-200">
         {/* Lado Esquerdo: Voltar & Título do Livro */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen((v) => !v)}
+            className="md:hidden p-1.5 px-2 rounded-lg border border-border bg-surface-3 text-ink text-xs font-bold flex items-center gap-1"
+            title="Páginas, blocos e mídias"
+          >
+            <LuLayers className="w-3.5 h-3.5" />
+            <span>Painel</span>
+          </button>
           <button
             onClick={() => navigate("/")}
-            className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface-3 transition flex items-center gap-1 text-xs font-bold"
+            className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface-3 transition flex items-center gap-1 text-xs font-bold shrink-0"
             title="Voltar ao Catálogo de Livros"
           >
             <IconChevronLeft className="w-4 h-4" />
-            <span>{t("editor.back")}</span>
+            <span className="hidden sm:inline">{t("editor.back")}</span>
           </button>
-          <div className="h-4 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <span className="bg-brand-red text-white text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider">
+          <div className="hidden sm:block h-4 w-px bg-border" />
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="bg-brand-red text-white text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-wider shrink-0">
               {doc.sourceFormat}
             </span>
             <input
@@ -380,18 +462,18 @@ export default function EditorPage() {
                 const newTitle = e.target.value;
                 updateDoc((prev) => ({ ...prev, title: newTitle }));
               }}
-              className="text-sm font-bold text-ink bg-transparent hover:bg-surface-3 focus:bg-surface px-2 py-1 rounded border border-transparent hover:border-border focus:border-brand-red outline-none transition max-w-md truncate"
+              className="text-sm font-bold text-ink bg-transparent hover:bg-surface-3 focus:bg-surface px-2 py-1 rounded border border-transparent hover:border-border focus:border-brand-red outline-none transition w-full max-w-xs sm:max-w-md truncate"
             />
           </div>
         </div>
 
-        {/* Lado Direito: Status de Auto-save, Preview e Exportar ZIP */}
-        <div className="flex items-center gap-3">
+        {/* Lado Direito: Status de Auto-save, Versões, Preview e Exportar ZIP */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           <div className="flex items-center gap-1.5 text-xs text-muted">
             {saveStatus === "saved" && (
               <>
                 <IconCheck className="w-4 h-4 text-emerald-500" />
-                <span className="text-emerald-500 font-semibold text-[11px]">{t("editor.saved")}</span>
+                <span className="hidden sm:inline text-emerald-500 font-semibold text-[11px]">{t("editor.saved")}</span>
               </>
             )}
             {saveStatus === "saving" && (
@@ -404,7 +486,36 @@ export default function EditorPage() {
             )}
           </div>
 
-          <div className="h-4 w-px bg-border" />
+          <div className="hidden sm:block h-4 w-px bg-border" />
+
+          {hasIdmlGeometry && (
+            <label className="flex items-center gap-1 text-[11px] font-bold text-muted" title="Modo de layout na publicação">
+              <select
+                value={doc.layoutMode || "flow"}
+                onChange={(e) =>
+                  updateDoc((prev) => ({
+                    ...prev,
+                    layoutMode: e.target.value as "flow" | "idml",
+                  }))
+                }
+                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-[11px] font-bold text-ink hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-brand-red/40"
+              >
+                <option value="idml">Layout: Fiel ao IDML</option>
+                <option value="flow">Layout: Fluxo contínuo</option>
+              </select>
+            </label>
+          )}
+
+          {/* Botão Histórico de Versões */}
+          <button
+            type="button"
+            onClick={handleOpenVersions}
+            className="p-1.5 px-2.5 rounded-lg border border-border bg-surface hover:bg-surface-3 text-ink text-xs font-bold flex items-center gap-1.5 transition"
+            title="Histórico de versões e rollback"
+          >
+            <LuHistory className="w-3.5 h-3.5 text-brand-red" />
+            <span className="hidden sm:inline">Versões</span>
+          </button>
 
           {/* Botão de Toggle do Inspector */}
           <button
@@ -420,7 +531,7 @@ export default function EditorPage() {
           </button>
 
           {/* Seletor de idioma da interface (i18n) */}
-          <label className="flex items-center gap-1 text-[11px] font-bold text-muted">
+          <label className="hidden lg:flex items-center gap-1 text-[11px] font-bold text-muted">
             <span className="sr-only">{t("editor.language")}</span>
             <select
               value={locale}
@@ -442,40 +553,58 @@ export default function EditorPage() {
             className="p-1.5 px-3 rounded-xl bg-surface-3 hover:bg-surface text-ink border border-border text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconEye className="w-4 h-4 text-brand-red" />
-            <span>{t("editor.preview")}</span>
+            <span className="hidden sm:inline">{t("editor.preview")}</span>
           </button>
 
           {/* Botão Exportar Web ZIP */}
           <a
             href={`${apiBase}/projects/${doc.id}/download`}
             onClick={handleExportZip}
-            className="p-1.5 px-4 rounded-xl bg-brand-red hover:bg-brand-red-dark text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+            className="p-1.5 px-3 sm:px-4 rounded-xl bg-brand-red hover:bg-brand-red-dark text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
           >
             <IconDownload className="w-4 h-4" />
-            <span>{t("editor.export")}</span>
+            <span className="hidden sm:inline">{t("editor.export")}</span>
           </a>
         </div>
       </header>
 
-      {/* Corpo do Editor: 3 Colunas */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Corpo do Editor: 3 Colunas (drawers no mobile) */}
+      <div className="relative flex-1 flex overflow-hidden">
+        {mobileSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
         {/* 1. Barra Lateral Esquerda (Páginas, Blocos, Mídias) */}
-        <SidebarPanels
-          doc={doc}
-          activeTab={sidebarTab}
-          setActiveTab={setSidebarTab}
-          activePageIndex={activePageIndex}
-          setActivePageIndex={setActivePageIndex}
-          onAddPage={handleAddPage}
-          onDuplicatePage={handleDuplicatePage}
-          onDeletePage={handleDeletePage}
-          onMergePageWithNext={handleMergeWithNext}
-          onAddBlock={handleAddBlock}
-          onUploadAsset={handleUploadAsset}
-          selectedBlockId={selectedBlockId}
-          onReplaceImageInSelectedBlock={handleReplaceImageInSelectedBlock}
-          apiBase={apiBase}
-        />
+        <div
+          className={`${
+            mobileSidebarOpen ? "fixed inset-y-0 left-0 z-40 flex" : "hidden"
+          } md:static md:flex h-full`}
+        >
+          <SidebarPanels
+            doc={doc}
+            activeTab={sidebarTab}
+            setActiveTab={setSidebarTab}
+            activePageIndex={activePageIndex}
+            setActivePageIndex={(idx) => {
+              setActivePageIndex(idx);
+              setMobileSidebarOpen(false);
+            }}
+            onAddPage={handleAddPage}
+            onDuplicatePage={handleDuplicatePage}
+            onDeletePage={handleDeletePage}
+            onMergePageWithNext={handleMergeWithNext}
+            onAddBlock={(type, src) => {
+              handleAddBlock(type, src);
+              setMobileSidebarOpen(false);
+            }}
+            onUploadAsset={handleUploadAsset}
+            selectedBlockId={selectedBlockId}
+            onReplaceImageInSelectedBlock={handleReplaceImageInSelectedBlock}
+            apiBase={apiBase}
+          />
+        </div>
 
         {/* 2. Área Central de Trabalho (Canvas do Livro) */}
         <BlockCanvas
@@ -496,18 +625,104 @@ export default function EditorPage() {
 
         {/* 3. Painel Lateral Direito (Configurações do Bloco Ativo) */}
         {inspectorOpen && (
-          <BlockInspector
-            block={selectedBlock}
-            onUpdateBlock={handleUpdateBlock}
-            onDuplicateBlock={handleDuplicateBlock}
-            onDeleteBlock={handleDeleteBlock}
-            onClose={() => setInspectorOpen(false)}
-            assets={doc.assets}
-            apiBase={apiBase}
-            projectId={doc.id}
-          />
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 z-30 md:hidden"
+              onClick={() => setInspectorOpen(false)}
+            />
+            <div className="fixed inset-y-0 right-0 z-40 flex md:static h-full">
+              <BlockInspector
+                block={selectedBlock}
+                onUpdateBlock={handleUpdateBlock}
+                onDuplicateBlock={handleDuplicateBlock}
+                onDeleteBlock={handleDeleteBlock}
+                onClose={() => setInspectorOpen(false)}
+                assets={doc.assets}
+                apiBase={apiBase}
+                projectId={doc.id}
+              />
+            </div>
+          </>
         )}
       </div>
+
+      {/* Modal de Histórico de Versões / Rollback */}
+      {showVersions && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-surface border border-border rounded-2xl shadow-card overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface-3">
+              <div className="flex items-center gap-2">
+                <LuHistory className="w-4 h-4 text-brand-red" />
+                <h2 className="text-sm font-bold text-ink">Versões do projeto (Rollback)</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVersions(false)}
+                className="p-1 text-muted hover:text-ink rounded-lg hover:bg-surface-2"
+                aria-label="Fechar histórico de versões"
+              >
+                <LuX className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-border flex gap-2">
+              <input
+                type="text"
+                value={versionLabel}
+                onChange={(e) => setVersionLabel(e.target.value)}
+                placeholder="Nome do marco (ex: Antes de trocar imagens)"
+                className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface text-xs text-ink focus:border-brand-red focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleSaveVersion}
+                disabled={versionActionBusy}
+                className="px-4 py-2 rounded-xl bg-brand-red hover:bg-brand-red-dark text-white text-xs font-bold transition disabled:opacity-50"
+              >
+                Salvar versão
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {versionsLoading ? (
+                <p className="text-xs text-muted text-center py-6">Carregando versões...</p>
+              ) : versions.length === 0 ? (
+                <p className="text-xs text-muted text-center py-6">
+                  Nenhuma versão salva ainda. Salve uma versão manual acima para criar um ponto de restauração.
+                </p>
+              ) : (
+                versions.map((v) => (
+                  <div
+                    key={v.id}
+                    className="p-3 rounded-xl border border-border bg-surface-2 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-ink truncate">{v.label}</span>
+                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-surface-3 text-muted border border-border">
+                          {v.kind === "manual" ? "Manual" : v.kind === "rollback" ? "Backup" : "Auto"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted mt-0.5">
+                        {new Date(v.createdAt).toLocaleString("pt-BR")} · {v.pageCount} pág. · {v.blockCount} blocos
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreVersion(v)}
+                      disabled={versionActionBusy}
+                      className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-surface hover:border-brand-red hover:text-brand-red text-xs font-bold text-ink transition disabled:opacity-50"
+                    >
+                      <LuRotateCcw className="w-3.5 h-3.5" />
+                      Restaurar
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Preview Interativo */}
       {showPreview && (
