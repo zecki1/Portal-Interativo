@@ -1,0 +1,64 @@
+// Prisma schema (SQL Server)
+// generator e datasource
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("Convidado")
+  subRole      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Resource {
+  id             String   @id @default(uuid())
+  title          String
+  slug           String   @unique
+  description    String?
+  type           String
+  mimeType       String   @default("application/octet-stream")
+  sizeBytes      Int      @default(0)
+  thumbnailUrl   String?
+  fileName       String?
+  dimensions     String?
+  tags           String   @default("[]")
+  story          String?
+  notes          String?
+  prompt         String?
+  poses          Int      @default(0)
+  animationReady Boolean  @default(false)
+  animationFiles Int      @default(0)
+  status         String   @default("draft")
+  authorId       String
+  lastEditedBy   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  activities ResourceActivity[]
+}
+
+/// Histórico de quem enviou e de quem editou cada recurso.
+model ResourceActivity {
+  id         String   @id @default(uuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  authorId   String?
+  authorName String
+  action     String
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([resourceId, createdAt])
+  @@index([createdAt])
+}

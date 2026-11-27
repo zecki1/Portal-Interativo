@@ -1,0 +1,16 @@
+{
+  "name": "portal-interativo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend \"npm --prefix backend run dev:backend\" \"npm --prefix frontend run dev:frontend\"",
+    "dev:backend": "npm --prefix backend run dev:backend",
+    "dev:frontend": "npm --prefix frontend run dev:frontend",
+    "build": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "preview": "npm --prefix frontend run preview"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}

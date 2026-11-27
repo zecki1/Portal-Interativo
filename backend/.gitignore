@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+data/
+uploads/
+*.log
+.DS_Store
+
+# manter exemplos versionados
+!.env.example

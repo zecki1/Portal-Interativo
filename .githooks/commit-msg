@@ -1,0 +1,28 @@
+#!/bin/sh
+# Hook commit-msg: valida Conventional Commits
+# Exceções: Merge, Revert, fixup!, squash!
+
+msg_file="$1"
+msg=$(cat "$msg_file")
+
+# Ignora commits de merge/revert/fixup/squash
+case "$msg" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+
+# Primeira linha
+first_line=$(printf '%s' "$msg" | head -n1)
+
+# Regex de Conventional Commits
+# <tipo>(<escopo>)?: <descrição>
+pattern='^(feat|fix|test|docs|design|ops|backend|chore|refactor|perf|style|ci|build)(\([a-zA-Z0-9_-]+\))?!?: .+'
+
+if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
+  echo "ERRO: mensagem de commit não segue Conventional Commits."
+  echo "Formato esperado: <tipo>(<escopo>)?: <descrição no imperativo>"
+  echo "Tipos: feat, fix, test, docs, design, ops, backend, chore, refactor, perf, style, ci, build"
+  echo "Recebido: $first_line"
+  exit 1
+fi
+
+exit 0

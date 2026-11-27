@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.DS_Store
+.lighthouseci/
+test-results/
+playwright-report/
+.github/project-*.json
+
+# Env files: keep only local backend/.env and frontend/.env (never commit secrets)
+.env
+.env.*
+*.env.local
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# dados locais
+backend/data/
+backend/uploads/
+data/
+
+# pacotes locais
+zecki-novo/
+livrodigital/
+livrodigital.conf
+zeki-pkg/
+infra/.env

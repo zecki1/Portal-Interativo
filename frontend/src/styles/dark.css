@@ -1,0 +1,116 @@
+/*
+ * Tema escuro.
+ *
+ * Os componentes usam os tokens (surface, surface-2, border, text, muted),
+ * então a maior parte da troca acontece só em index.css. Este arquivo cobre
+ * os casos herdados do sesi-teste-dev que usam utilitários fixos (bg-white,
+ * text-[var(--sesi-black)] etc.) e os controles nativos.
+ */
+
+html[data-theme="escuro"] {
+  color-scheme: dark;
+  --sesi-dark-bg: #0c0c0d;
+  --sesi-dark-surface: #17171a;
+  --sesi-dark-surface-2: #232327;
+  --sesi-dark-border: #2e2e33;
+  --sesi-dark-text: #f4f4f5;
+  --sesi-dark-muted: #a1a1aa;
+  --sesi-dark-red: #ff6b6b;
+}
+
+html[data-theme="escuro"] body {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
+/* Superfícies claras herdadas */
+html[data-theme="escuro"] .bg-white {
+  background-color: var(--surface);
+}
+
+html[data-theme="escuro"] .bg-\[\#F5F5F5\],
+html[data-theme="escuro"] .hover\:bg-\[\#F5F5F5\]:hover,
+html[data-theme="escuro"] .bg-\[var\(--sesi-gray\)\] {
+  background-color: var(--surface-3);
+}
+
+html[data-theme="escuro"] .hover\:bg-white:hover {
+  background-color: var(--surface-3);
+}
+
+html[data-theme="escuro"] .hover\:bg-black\/5:hover {
+  background-color: rgb(255 255 255 / 0.08);
+}
+
+/* Texto */
+html[data-theme="escuro"] .text-\[var\(--sesi-black\)\] {
+  color: var(--text);
+}
+
+html[data-theme="escuro"] .text-\[var\(--sesi-muted\)\] {
+  color: var(--muted);
+}
+
+html[data-theme="escuro"] .text-\[var\(--sesi-red\)\] {
+  color: var(--sesi-dark-red);
+}
+
+/* Bordas e divisórias */
+html[data-theme="escuro"] .border-\[var\(--sesi-gray\)\] {
+  border-color: var(--border);
+}
+
+html[data-theme="escuro"] .border-\[var\(--sesi-black\)\] {
+  border-color: var(--text);
+}
+
+html[data-theme="escuro"] .border-black\/5 {
+  border-color: rgb(255 255 255 / 0.1);
+}
+
+html[data-theme="escuro"] .border-black\/10 {
+  border-color: rgb(255 255 255 / 0.14);
+}
+
+/* Cores de marca continuam iguais: texto segue o contraste original. */
+html[data-theme="escuro"] .bg-brand-red,
+html[data-theme="escuro"] .bg-brand-red-dark,
+html[data-theme="escuro"] .bg-brand-black,
+html[data-theme="escuro"] .bg-brand-green,
+html[data-theme="escuro"] .bg-brand-green-dark {
+  color: #ffffff;
+}
+
+/* Preto da marca (botões primários) permanece preto no escuro. */
+html[data-theme="escuro"] .bg-brand-black {
+  background-color: #0c0c0d;
+}
+
+/* Campos nativos */
+html[data-theme="escuro"] input,
+html[data-theme="escuro"] select,
+html[data-theme="escuro"] textarea {
+  background-color: var(--surface-3);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+html[data-theme="escuro"] input::placeholder,
+html[data-theme="escuro"] textarea::placeholder {
+  color: var(--muted);
+}
+
+html[data-theme="escuro"] select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+/* Imagens de demonstração não estouram o contraste */
+html[data-theme="escuro"] .demo-thumb {
+  filter: brightness(0.92) saturate(1.05);
+}
+
+/* VLibras no escuro */
+html[data-theme="escuro"] [vw-access-button] {
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.6));
+}
