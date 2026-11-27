@@ -60,20 +60,40 @@ async function selectExternal(
   comSenha = false,
 ): Promise<ExternalAuthUser[]> {
   if (!temBancoExterno()) return [];
-  const colunas = [
-    "username",
-    "first_name",
-    "last_name",
-    "email",
-    "is_active",
+  const base = ["username", "first_name", "last_name", "email", "is_active"];
+  const opcionais = [
     ...(process.env.EXTERNAL_ROLE_COLUMN ? [roleColumn()] : []),
     ...(comSenha ? [passwordColumn()] : []),
-  ].join(", ");
-  const sql = `SELECT ${colunas} FROM ${table()}${where ? ` WHERE ${where}` : ""} ORDER BY username`;
-  const resultado = await sequelizeExterna().query(sql, {
-    type: QueryTypes.SELECT,
-    ...(replacements ? { replacements } : {}),
-  });
+  ];
+  const executar = async (cols: string[]) => {
+    const sql = `SELECT ${cols.join(", ")} FROM ${table()}${where ? ` WHERE ${where}` : ""} ORDER BY username`;
+    return sequelizeExterna().query(sql, {
+      type: QueryTypes.SELECT,
+      ...(replacements ? { replacements } : {}),
+    });
+  };
+  let cols = [...base, ...opcionais];
+  let resultado: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      resultado = await executar(cols);
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const m = msg.match(/invalid column name '([^']+)'/i);
+      if (m) {
+        const faltante = m[1].toLowerCase();
+        const antes = cols.length;
+        cols = cols.filter((c) => c.toLowerCase() !== faltante);
+        if (cols.length !== antes) {
+          aviso(`coluna ausente na base externa (${faltante}); tentando sem ela.`);
+          continue;
+        }
+      }
+      throw err;
+    }
+  }
+  if (resultado === undefined) resultado = await executar(base);
   // QueryTypes.SELECT devolve as linhas diretamente; Some dialetos/devoluções
   // cruas trazem [linhas, metadata]. Normaliza os dois formatos.
   const rows = Array.isArray(resultado)
